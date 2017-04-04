@@ -25,7 +25,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import common.StreamLogging
 import whisk.common.TransactionId
 import whisk.core.containerpool.docker.RuncApi
-import whisk.core.containerpool.docker.DockerApi
 import whisk.core.containerpool.docker.DockerContainer
 import whisk.core.containerpool.docker.ContainerId
 import whisk.core.containerpool.docker.ContainerIp
@@ -44,6 +43,7 @@ import whisk.core.entity.ActivationResponse
 import org.scalatest.BeforeAndAfterEach
 import scala.concurrent.Await
 import whisk.core.entity.ActivationResponse.Timeout
+import whisk.core.containerpool.docker.DockerApiWithFileAccess
 
 /**
  * Unit tests for ContainerPool schedule
@@ -64,7 +64,7 @@ class DockerContainerTests extends FlatSpec
     def await[A](f: Future[A], timeout: FiniteDuration = 100.millisecond) = Await.result[A](f, timeout)
 
     def dockerContainer(id: ContainerId = ContainerId("id"), ip: ContainerIp = ContainerIp("ip"))(ccRes: Future[RunResult])(
-        implicit docker: DockerApi, runc: RuncApi): DockerContainer = {
+        implicit docker: DockerApiWithFileAccess, runc: RuncApi): DockerContainer = {
 
         new DockerContainer(id, ip) {
             override protected def callContainer(path: String, body: JsObject, timeout: FiniteDuration, retry: Boolean = false): Future[RunResult] = {
@@ -79,15 +79,15 @@ class DockerContainerTests extends FlatSpec
 
     implicit val transid = TransactionId.testing
 
-    ignore should "create a new instance" in {
-        implicit val docker = stub[DockerApi]
+    it should "create a new instance" in {
+        implicit val docker = stub[DockerApiWithFileAccess]
         implicit val runc = stub[RuncApi]
 
         val container = DockerContainer.create(transid = TransactionId.testing, image = "image")
     }
 
     it should "halt and resume container via runc" in {
-        implicit val docker = stub[DockerApi]
+        implicit val docker = stub[DockerApiWithFileAccess]
         implicit val runc = stub[RuncApi]
 
         val id = ContainerId("id")
@@ -101,7 +101,7 @@ class DockerContainerTests extends FlatSpec
     }
 
     it should "destroy a container via Docker" in {
-        implicit val docker = stub[DockerApi]
+        implicit val docker = stub[DockerApiWithFileAccess]
         implicit val runc = stub[RuncApi]
 
         val id = ContainerId("id")
@@ -113,7 +113,7 @@ class DockerContainerTests extends FlatSpec
     }
 
     it should "initialize a container" in {
-        implicit val docker = stub[DockerApi]
+        implicit val docker = stub[DockerApiWithFileAccess]
         implicit val runc = stub[RuncApi]
 
         val interval = intervalOf(1.millisecond)
@@ -135,7 +135,7 @@ class DockerContainerTests extends FlatSpec
     }
 
     it should "properly deal with terminal initialization failures" in {
-        implicit val docker = stub[DockerApi]
+        implicit val docker = stub[DockerApiWithFileAccess]
         implicit val runc = stub[RuncApi]
 
         val container = dockerContainer() {
@@ -154,7 +154,7 @@ class DockerContainerTests extends FlatSpec
     }
 
     it should "properly deal with a timeout during initialization" in {
-        implicit val docker = stub[DockerApi]
+        implicit val docker = stub[DockerApiWithFileAccess]
         implicit val runc = stub[RuncApi]
 
         val initTimeout = 1.second
@@ -175,4 +175,3 @@ class DockerContainerTests extends FlatSpec
         end.token shouldBe INVOKER_ACTIVATION_INIT.asFinish
     }
 }
-

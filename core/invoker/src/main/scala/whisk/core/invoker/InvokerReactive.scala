@@ -27,7 +27,6 @@ import scala.concurrent.Future
 import whisk.common.LoggingMarkers
 import whisk.core.entity._
 import whisk.core.containerpool.docker.DockerContainer
-import whisk.core.containerpool.docker.DockerClient
 import whisk.core.containerpool.docker.RuncClient
 import whisk.core.container.{ ContainerPool => OldContainerPool }
 import whisk.core.containerpool.Run
@@ -36,11 +35,12 @@ import akka.actor.ActorRefFactory
 import whisk.core.containerpool.WhiskContainer
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import whisk.core.containerpool.docker.DockerApi
 import whisk.core.containerpool.docker.RuncApi
 import whisk.core.connector.CompletionMessage
 import scala.util.Success
 import scala.util.Failure
+import whisk.core.containerpool.docker.DockerClientWithFileAccess
+import whisk.core.containerpool.docker.DockerApiWithFileAccess
 
 class InvokerReactive(
     config: WhiskConfig,
@@ -54,7 +54,7 @@ class InvokerReactive(
     private val entityStore = WhiskEntityStore.datastore(config)
     private val activationStore = WhiskActivationStore.datastore(config)
 
-    implicit val docker: DockerApi = new DockerClient()(ec)
+    implicit val docker: DockerApiWithFileAccess = new DockerClientWithFileAccess()(ec)
     implicit val runc: RuncApi = new RuncClient(ec)
 
     /** Cleans up all running wsk_ containers */
