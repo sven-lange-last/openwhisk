@@ -39,6 +39,7 @@ import java.nio.charset.StandardCharsets
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
+import scala.language.reflectiveCalls // Needed to invoke publicIpAddressFromFile() method of structural dockerClientForIp extension
 
 @RunWith(classOf[JUnitRunner])
 class DockerClientWithFileAccessTestsIp extends FlatSpec with Matchers with StreamLogging with BeforeAndAfterEach {
@@ -66,7 +67,7 @@ class DockerClientWithFileAccessTestsIp extends FlatSpec with Matchers with Stre
         override val dockerCmd = Seq(dockerCommand)
         override def executeProcess(args: String*)(implicit ec: ExecutionContext) = execResult
         override def configFileContents(configFile: File) = readResult
-        // Make protected ipAddressFromFile available for testing
+        // Make protected ipAddressFromFile available for testing - requires reflectiveCalls
         def publicIpAddressFromFile(id: ContainerId, network: String): Future[ContainerIp] = ipAddressFromFile(id, network)
     }
 

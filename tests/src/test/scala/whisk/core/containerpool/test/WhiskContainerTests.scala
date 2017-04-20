@@ -29,26 +29,26 @@ import akka.testkit.ImplicitSender
 import org.scalatest.FlatSpecLike
 import scala.concurrent.duration._
 import org.scalatest.BeforeAndAfterAll
-import whisk.core.containerpool.WhiskContainer
+// import whisk.core.containerpool.WhiskContainer
 import whisk.core.containerpool.Container
 import whisk.common.TransactionId
 import whisk.core.entity.Exec
 import whisk.core.entity.ByteSize
 import scala.concurrent.Future
 import whisk.core.entity.WhiskActivation
-import whisk.core.containerpool.Start
+// import whisk.core.containerpool.Start
 import whisk.core.entity.CodeExecAsString
 import whisk.core.entity.ExecManifest.RuntimeManifest
-import whisk.core.containerpool.NeedWork
+// import whisk.core.containerpool.NeedWork
 import akka.actor.FSM
-import akka.actor.FSM.SubscribeTransitionCallBack
+// import akka.actor.FSM.SubscribeTransitionCallBack
 import akka.testkit.TestProbe
-import akka.actor.FSM.CurrentState
-import whisk.core.containerpool.Uninitialized
-import akka.actor.FSM.Transition
-import whisk.core.containerpool.Starting
-import whisk.core.containerpool.Started
-import whisk.core.containerpool.PreWarmedData
+// import akka.actor.FSM.CurrentState
+// import whisk.core.containerpool.Uninitialized
+// import akka.actor.FSM.Transition
+// import whisk.core.containerpool.Starting
+// import whisk.core.containerpool.Started
+// import whisk.core.containerpool.PreWarmedData
 import whisk.core.entity.size._
 
 @RunWith(classOf[JUnitRunner])
