@@ -144,6 +144,7 @@ var actionInvokeCmd = &cobra.Command{
                 return getJSONFromStringsParamError(paramArgs, false, err)
             }
         }
+        if flags.action.result {flags.common.blocking = true}
 
         res, _, err := client.Actions.Invoke(
             qualifiedName.entityName,
@@ -592,8 +593,9 @@ func actionInsertError(action *whisk.Action, err error) (error) {
     whisk.Debug(whisk.DbgError, "client.Actions.Insert(%#v, false) error: %s\n", action, err)
 
     errMsg := wski18n.T(
-        "Unable to create action: {{.err}}",
+        "Unable to create action '{{.name}}': {{.err}}",
         map[string]interface{}{
+            "name": action.Name,
             "err": err,
         })
 
@@ -653,8 +655,9 @@ func actionDeleteError(entityName string, err error) (error) {
     whisk.Debug(whisk.DbgError, "client.Actions.Delete(%s) error: %s\n", entityName, err)
 
     errMsg := wski18n.T(
-        "Unable to delete action: {{.err}}",
+        "Unable to delete action '{{.name}}': {{.err}}",
         map[string]interface{}{
+            "name": entityName,
             "err": err,
         })
 
@@ -665,7 +668,7 @@ func actionGetError(entityName string, err error) (error) {
     whisk.Debug(whisk.DbgError, "client.Actions.Get(%s) error: %s\n", entityName, err)
 
     errMsg := wski18n.T(
-        "Unable to obtain action '{{.name}}' to copy: {{.err}}",
+        "Unable to get action '{{.name}}': {{.err}}",
         map[string]interface{}{
             "name": entityName,
             "err": err,
@@ -847,7 +850,8 @@ func isWebAction(client *whisk.Client, qname QualifiedName) error {
         whisk.Debug(whisk.DbgError, "Unable to obtain action '%s' for web action validation\n", fullActionName)
         err = errors.New(wski18n.T("API action does not exist"))
     } else {
-        err = errors.New(wski18n.T("API action is not a web-action"))
+        err = errors.New(wski18n.T("API action '{{.name}}' is not a web action. Issue 'wsk action update {{.name}} --web true' to convert the action to a web action.",
+            map[string]interface{}{"name": fullActionName}))
         weVal := getValue(action.Annotations, "web-export")
         if (weVal == nil) {
             whisk.Debug(whisk.DbgError, "getValue(annotations, web-export) for action %s found no value\n", fullActionName)
@@ -900,7 +904,7 @@ func init() {
     actionInvokeCmd.Flags().StringSliceVarP(&flags.common.param, "param", "p", []string{}, wski18n.T("parameter values in `KEY VALUE` format"))
     actionInvokeCmd.Flags().StringVarP(&flags.common.paramFile, "param-file", "P", "", wski18n.T("`FILE` containing parameter values in JSON format"))
     actionInvokeCmd.Flags().BoolVarP(&flags.common.blocking, "blocking", "b", false, wski18n.T("blocking invoke"))
-    actionInvokeCmd.Flags().BoolVarP(&flags.action.result, "result", "r", false, wski18n.T("show only activation result if a blocking activation (unless there is a failure)"))
+    actionInvokeCmd.Flags().BoolVarP(&flags.action.result, "result", "r", false, wski18n.T("blocking invoke; show only activation result (unless there is a failure)"))
 
     actionGetCmd.Flags().BoolVarP(&flags.common.summary, "summary", "s", false, wski18n.T("summarize action details"))
 
