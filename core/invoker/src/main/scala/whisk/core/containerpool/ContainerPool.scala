@@ -107,21 +107,16 @@ class ContainerPool(
             }
 
         // Container is free to take more work
-        case NeedWork(data: WarmedData) =>
-            pool.update(sender(), WorkerData(data, Free))
+        case NeedWork(data: WarmedData)    => pool.update(sender(), WorkerData(data, Free))
 
         // Container is prewarmed and ready to take work
-        case NeedWork(data: PreWarmedData) =>
-            prewarmedPool.update(sender(), WorkerData(data, Free))
+        case NeedWork(data: PreWarmedData) => prewarmedPool.update(sender(), WorkerData(data, Free))
 
         // Container got removed
-        case ContainerRemoved =>
-            pool.remove(sender())
+        case ContainerRemoved              => pool.remove(sender())
 
-        case ActivationCompleted(tid, success) =>
-            val msg = if (success) ContainerReleased else FailedActivation(tid)
-            feed ! msg
-            logging.info(this, s"informed activation feed about completed activation: ${msg}")(tid)
+        // Activation completed
+        case ActivationCompleted           => feed ! ContainerReleased
     }
 
     /** Creates a new container and updates state accordingly. */

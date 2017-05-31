@@ -66,7 +66,7 @@ case object Remove
 case class NeedWork(data: ContainerData)
 case object ContainerPaused
 case object ContainerRemoved
-case class ActivationCompleted(tid: TransactionId, success: Boolean)
+case object ActivationCompleted
 
 /**
  * A proxy that wraps a Container. It is used to keep track of the lifecycle
@@ -134,7 +134,7 @@ class ContainerProxy(
                             case _                               => ActivationResponse.whiskError(t.getMessage)
                         }
                         val activation = ContainerProxy.constructWhiskActivation(job, Interval.zero, response)
-                        context.parent ! ActivationCompleted(transid, activation.response.isSuccess)
+                        self ! ActivationCompleted
                         sendActiveAck(transid, activation)
                         storeActivation(transid, activation)
                 }
@@ -193,6 +193,11 @@ class ContainerProxy(
         case Event(_: FailureMessage, _) =>
             context.parent ! ContainerRemoved
             stop()
+
+        // Activation finished either successfully or not
+        case Event(ActivationCompleted, _) =>
+            context.parent ! ActivationCompleted
+            stay
 
         case _ => delay
     }
@@ -339,7 +344,7 @@ class ContainerProxy(
         }.andThen {
             case Success(activation) => storeActivation(tid, activation)
         }.flatMap { activation =>
-            context.parent ! ActivationCompleted(tid, activation.response.isSuccess)
+            self ! ActivationCompleted
             // Fail the future iff the activation was unsuccessful to facilitate
             // better cleanup logic.
             if (activation.response.isSuccess) Future.successful(activation)

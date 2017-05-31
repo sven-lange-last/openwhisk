@@ -112,11 +112,8 @@ class ContainerPoolTests extends TestKit(ActorSystem("ContainerPool"))
         val feed = TestProbe()
 
         val pool = system.actorOf(ContainerPool.props(factory, 0, feed.ref))
-        containers(0).send(pool, ActivationCompleted(TransactionId.testing, true))
+        containers(0).send(pool, ActivationCompleted)
         feed.expectMsg(ContainerReleased)
-
-        containers(0).send(pool, ActivationCompleted(TransactionId.testing, false))
-        feed.expectMsg(FailedActivation(TransactionId.testing))
     }
 
     /*
@@ -160,7 +157,7 @@ class ContainerPoolTests extends TestKit(ActorSystem("ContainerPool"))
         pool ! runMessage
         containers(0).expectMsg(runMessage)
         containers(0).send(pool, NeedWork(warmedData()))
-        containers(0).send(pool, ActivationCompleted(TransactionId.testing, true))
+        containers(0).send(pool, ActivationCompleted)
         feed.expectMsg(ContainerReleased)
         pool ! runMessageDifferentEverything
         containers(0).expectMsg(Remove)
@@ -176,7 +173,7 @@ class ContainerPoolTests extends TestKit(ActorSystem("ContainerPool"))
         pool ! runMessage
         containers(0).expectMsg(runMessage)
         containers(0).send(pool, NeedWork(warmedData()))
-        containers(0).send(pool, ActivationCompleted(TransactionId.testing, true))
+        containers(0).send(pool, ActivationCompleted)
         feed.expectMsg(ContainerReleased)
         pool ! runMessageDifferentNamespace
         containers(0).expectMsg(Remove)
@@ -192,7 +189,7 @@ class ContainerPoolTests extends TestKit(ActorSystem("ContainerPool"))
         pool ! runMessage
         containers(0).expectMsg(runMessage)
         containers(0).send(pool, NeedWork(warmedData()))
-        containers(0).send(pool, ActivationCompleted(TransactionId.testing, true))
+        containers(0).send(pool, ActivationCompleted)
         feed.expectMsg(ContainerReleased)
         pool ! runMessage
         containers(0).expectMsg(runMessage)
