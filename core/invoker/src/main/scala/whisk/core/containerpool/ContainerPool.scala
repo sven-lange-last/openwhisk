@@ -29,6 +29,7 @@ import whisk.core.entity.CodeExec
 import whisk.core.entity.EntityName
 import whisk.core.entity.ExecutableWhiskAction
 import whisk.core.entity.size._
+import whisk.core.dispatcher.ActivationFeed.FailedActivation
 
 sealed trait WorkerState
 case object Busy extends WorkerState
@@ -108,7 +109,6 @@ class ContainerPool(
         // Container is free to take more work
         case NeedWork(data: WarmedData) =>
             pool.update(sender(), WorkerData(data, Free))
-            feed ! ContainerReleased
 
         // Container is prewarmed and ready to take work
         case NeedWork(data: PreWarmedData) =>
@@ -117,6 +117,11 @@ class ContainerPool(
         // Container got removed
         case ContainerRemoved =>
             pool.remove(sender())
+
+        case ActivationCompleted(tid, success) =>
+            val msg = if (success) ContainerReleased else FailedActivation(tid)
+            feed ! msg
+            logging.info(this, s"informed activation feed about completed activation: ${msg}")(tid)
     }
 
     /** Creates a new container and updates state accordingly. */
