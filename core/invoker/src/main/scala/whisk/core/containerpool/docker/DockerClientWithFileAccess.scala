@@ -32,6 +32,8 @@ import spray.json.DefaultJsonProtocol._
 import spray.json._
 import whisk.common.Logging
 import whisk.common.TransactionId
+import whisk.core.entity.ByteSize
+import java.nio.channels.FileChannel
 
 class DockerClientWithFileAccess(
     dockerHost: Option[String] = None,
@@ -127,6 +129,12 @@ class DockerClientWithFileAccess(
         }
     }
 
+    // The resulting buffer must hold the specified size or is capped to the specified limit if size > limit
+    // Guarantee a minimum buffer size of 1 KiB to deal with size=0
+    protected def readBufferSize(size: Long, limit: Long): Long = {
+        Math.max(Math.min(size, limit), 1024)
+    }
+
     // See extended trait for description
     def rawContainerLogs(containerId: ContainerId, fromPos: Long): Future[ByteBuffer] = Future {
         blocking { // Needed due to synchronous file operations
@@ -158,6 +166,58 @@ class DockerClientWithFileAccess(
                     throw new IOException(s"rawContainerLogs failed on ${containerId}", e)
             } finally {
                 if (fis != null) fis.close()
+            }
+        }
+    }
+
+    protected def readFile(fileChannel: FileChannel, readBuffer: ByteBuffer, remainingBytes: Int): ByteBuffer = {
+        println(s"readBuffer=${readBuffer}")
+        if (remainingBytes <= 0) {
+            readBuffer
+        } else {
+            val readBytes = fileChannel.read(readBuffer)
+            if (readBytes < 0) {
+                readBuffer
+            } else {
+                readFile(fileChannel, readBuffer, remainingBytes - readBytes)
+            }
+        }
+    }
+
+    protected def withFileAtPosition(file: File, position: Long)(reader: FileChannel => ByteBuffer): ByteBuffer = {
+        val fis = new FileInputStream(file)
+        try {
+            val channel = fis.getChannel().position(position)
+            reader(channel)
+        } finally {
+            fis.close()
+        }
+    }
+
+    // See implemented trait for description
+    def rawContainerLogsNew(containerId: ContainerId, fromPos: Long): Future[ByteBuffer] = Future {
+        blocking { // Needed due to synchronous file operations
+            try {
+                val file = containerLogFile(containerId)
+                val size = file.length
+
+                withFileAtPosition(file, fromPos) { channel =>
+                    val newSize = (size - fromPos).toInt
+                    if (newSize < 0) throw new NegativeArraySizeException(s"New data size calculation yields negative result - size=${size}, fromPos=${fromPos}")
+
+                    // Cap remainingBytes at the specified limit otherwise a large log file
+                    // may lead to an out-of-memory condition.
+                    val remainingBytes = Math.min(newSize, 0 /* limit */ )
+
+                    // remainingBytes could be 0 if Docker is slow with updating the log file.
+                    // If remainingBytes==0, allocate a minimum buffer and return it empty.
+                    val readBuffer = ByteBuffer.allocate(Math.max(remainingBytes, 1))
+
+                    readFile(channel, readBuffer, remainingBytes)
+                }
+            } catch {
+                case e: Exception =>
+                    throw new IOException(s"rawContainerLogs failed on ${containerId}", e)
             }
         }
     }
