@@ -34,6 +34,7 @@ import whisk.common.Counter
 import whisk.common.Logging
 import whisk.core.connector.Message
 import whisk.core.connector.MessageProducer
+import whisk.core.entity.size.SizeInt
 import whisk.core.entity.UUIDs
 
 class KafkaProducerConnector(kafkahost: String,
@@ -78,6 +79,7 @@ class KafkaProducerConnector(kafkahost: String,
     val props = new Properties
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkahost)
     props.put(ProducerConfig.ACKS_CONFIG, 1.toString)
+    props.put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, Int.box(5.MB.toBytes.toInt))
     props
   }
 
