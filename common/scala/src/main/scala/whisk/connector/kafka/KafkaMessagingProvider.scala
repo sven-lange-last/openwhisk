@@ -40,12 +40,13 @@ import pureconfig._
 
 case class KafkaConfig(replicationFactor: Short)
 
-case class TopicConfig(segmentBytes: Long, retentionBytes: Long, retentionMs: Long) {
+case class TopicConfig(segmentBytes: Long, retentionBytes: Long, retentionMs: Long, maxMessageBytes: Option[Long]) {
   def toMap: Map[String, String] = {
     Map(
       "retention.bytes" -> retentionBytes.toString,
       "retention.ms" -> retentionMs.toString,
-      "segment.bytes" -> segmentBytes.toString)
+      "segment.bytes" -> segmentBytes.toString) ++
+      maxMessageBytes.map(mmb => "max.message.bytes" -> mmb.toString)
   }
 }
 
