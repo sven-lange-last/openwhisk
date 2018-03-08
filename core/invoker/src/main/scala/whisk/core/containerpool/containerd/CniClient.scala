@@ -64,11 +64,11 @@ class CniClient()(executionContext: ExecutionContext)(implicit log: Logging, as:
   }
 
   // nsenter --target 1 --net /usr/local/bin/cni-full.sh ADD wsk_1_org_space_action
-  def addNetwork(name: String): Future[ContainerAddress] =
+  def addNetwork(name: String)(implicit transid: TransactionId): Future[ContainerAddress] =
     runCmd(Seq("ADD", name), 30.seconds).map(ContainerAddress(_))
 
   // nsenter --target 1 --net /usr/local/bin/cni-full.sh DEL wsk_1_org_space_action
-  def deleteNetwork(name: String): Future[Unit] =
+  def deleteNetwork(name: String)(implicit transid: TransactionId): Future[Unit] =
     runCmd(Seq("DEL", name), 30.seconds).map(_ => ())
 
   private def runCmd(args: Seq[String], timeout: Duration)(implicit transid: TransactionId): Future[String] = {
@@ -86,6 +86,6 @@ class CniClient()(executionContext: ExecutionContext)(implicit log: Logging, as:
 }
 
 trait CniApi {
-  def addNetwork(name: String): Future[ContainerAddress]
-  def deleteNetwork(name: String): Future[Unit]
+  def addNetwork(name: String)(implicit transid: TransactionId): Future[ContainerAddress]
+  def deleteNetwork(name: String)(implicit transid: TransactionId): Future[Unit]
 }
