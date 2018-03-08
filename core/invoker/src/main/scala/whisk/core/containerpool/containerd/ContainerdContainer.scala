@@ -71,7 +71,7 @@ object ContainerdContainer {
     implicit val tid: TransactionId = transid
 
     val environmentArgs = environment.flatMap {
-      case (key, value) => Seq("-e", s"$key=$value")
+      case (key, value) => Seq("--env", s"$key=$value")
     }.toSeq
 
     for {
