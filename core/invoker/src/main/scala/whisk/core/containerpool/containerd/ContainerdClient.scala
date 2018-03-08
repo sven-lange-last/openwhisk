@@ -107,11 +107,11 @@ class ContainerdClient(dockerHost: Option[String] = None,
           "--with-ns",
           s"network:/var/run/netns/${name}",
           "--mount",
-          """"type=bind,src=/var/run/whisk/action/resolv.conf,dst=/etc/resolv.conf,options=rbind:ro"""",
+          "type=bind,src=/var/run/whisk/action/resolv.conf,dst=/etc/resolv.conf,options=rbind:ro",
           "--mount",
-          """"type=bind,src=/var/run/whisk/action/hostname,dst=/etc/hostname,options=rbind:ro"""",
+          "type=bind,src=/var/run/whisk/action/hostname,dst=/etc/hostname,options=rbind:ro",
           "--mount",
-          s""""type=bind,src=/var/run/whisk/action/${name}.hosts,dst=/etc/hosts,options=rbind:ro"""") ++ args ++ Seq(
+          s"type=bind,src=/var/run/whisk/action/${name}.hosts,dst=/etc/hosts,options=rbind:ro") ++ args ++ Seq(
           image,
           name),
         timeouts.run)
