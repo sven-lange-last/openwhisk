@@ -32,7 +32,6 @@ import whisk.core.entity.size._
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import spray.json._
-import whisk.core.containerpool.logging.LogLine
 import whisk.http.Messages
 
 object ContainerdContainer {
@@ -192,6 +191,6 @@ class ContainerdContainer(protected val id: ContainerId, protected val addr: Con
    * @return a vector of Strings with log lines in our own JSON format
    */
   def logs(limit: ByteSize, waitForSentinel: Boolean)(implicit transid: TransactionId): Source[ByteString, Any] = {
-    Source.single(ByteString(LogLine(Instant.now.toString, "stdout", "Dummy").toJson.compactPrint))
+    Source.empty[ByteString]
   }
 }
