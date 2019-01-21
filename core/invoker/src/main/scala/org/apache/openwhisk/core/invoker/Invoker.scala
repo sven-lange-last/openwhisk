@@ -19,26 +19,27 @@ package org.apache.openwhisk.core.invoker
 
 import akka.Done
 import akka.actor.{ActorSystem, CoordinatedShutdown}
-import akka.stream.ActorMaterializer
+// import akka.stream.ActorMaterializer
 import com.typesafe.config.ConfigValueFactory
 import kamon.Kamon
 import pureconfig.loadConfigOrThrow
-import org.apache.openwhisk.common.Https.HttpsConfig
+// import org.apache.openwhisk.common.Https.HttpsConfig
 import org.apache.openwhisk.common._
 import org.apache.openwhisk.core.{ConfigKeys, WhiskConfig}
 import org.apache.openwhisk.core.WhiskConfig._
-import org.apache.openwhisk.core.connector.{MessagingProvider, PingMessage}
+// import org.apache.openwhisk.core.connector.{MessagingProvider, PingMessage}
 import org.apache.openwhisk.core.containerpool.ContainerPoolConfig
 import org.apache.openwhisk.core.entity.{ExecManifest, InvokerInstanceId}
 import org.apache.openwhisk.core.entity.ActivationEntityLimit
-import org.apache.openwhisk.core.entity.size._
-import org.apache.openwhisk.http.{BasicHttpService, BasicRasService}
-import org.apache.openwhisk.spi.SpiLoader
+// import org.apache.openwhisk.core.entity.size._
+// import org.apache.openwhisk.http.{BasicHttpService, BasicRasService}
+// import org.apache.openwhisk.spi.SpiLoader
 import org.apache.openwhisk.utils.ExecutionContextFactory
 
 import scala.concurrent.duration._
 import scala.concurrent.Await
-import scala.util.{Failure, Try}
+// import scala.util.{Failure, Try}
+import scala.util.Try
 
 case class CmdLineArgs(uniqueName: Option[String] = None, id: Option[Int] = None, displayedName: Option[String] = None)
 
@@ -149,31 +150,34 @@ object Invoker {
     val invokerInstance =
       InvokerInstanceId(assignedInvokerId, cmdLineArgs.uniqueName, cmdLineArgs.displayedName, poolConfig.userMemory)
 
-    val msgProvider = SpiLoader.get[MessagingProvider]
-    if (msgProvider
-          .ensureTopic(config, topic = topicName, topicConfig = topicBaseName, maxMessageBytes = maxMessageBytes)
-          .isFailure) {
-      abort(s"failure during msgProvider.ensureTopic for topic $topicName")
-    }
-    val producer = msgProvider.getProducer(config, Some(ActivationEntityLimit.MAX_ACTIVATION_LIMIT))
-    val invoker = try {
-      new InvokerReactive(config, invokerInstance, producer, poolConfig)
-    } catch {
-      case e: Exception => abort(s"Failed to initialize reactive invoker: ${e.getMessage}")
-    }
+// CONTAINERD: not required for first prototype
+//    val msgProvider = SpiLoader.get[MessagingProvider]
+//    if (msgProvider
+//          .ensureTopic(config, topic = topicName, topicConfig = topicBaseName, maxMessageBytes = maxMessageBytes)
+//          .isFailure) {
+//      abort(s"failure during msgProvider.ensureTopic for topic $topicName")
+//    }
+//    val producer = msgProvider.getProducer(config, Some(ActivationEntityLimit.MAX_ACTIVATION_LIMIT))
+//    val invoker = try {
+//      new InvokerReactive(config, invokerInstance, producer, poolConfig)
+//    } catch {
+//      case e: Exception => abort(s"Failed to initialize reactive invoker: ${e.getMessage}")
+//    }
 
-    Scheduler.scheduleWaitAtMost(1.seconds)(() => {
-      producer.send("health", PingMessage(invokerInstance)).andThen {
-        case Failure(t) => logger.error(this, s"failed to ping the controller: $t")
-      }
-    })
+// CONTAINERD: not required for first prototype
+//    Scheduler.scheduleWaitAtMost(1.seconds)(() => {
+//      producer.send("health", PingMessage(invokerInstance)).andThen {
+//        case Failure(t) => logger.error(this, s"failed to ping the controller: $t")
+//      }
+//    })
 
-    val port = config.servicePort.toInt
-    val httpsConfig =
-      if (Invoker.protocol == "https") Some(loadConfigOrThrow[HttpsConfig]("whisk.invoker.https")) else None
-
-    BasicHttpService.startHttpService(new BasicRasService {}.route, port, httpsConfig)(
-      actorSystem,
-      ActorMaterializer.create(actorSystem))
+// CONTAINERD: not required for first prototype
+//    val port = config.servicePort.toInt
+//    val httpsConfig =
+//      if (Invoker.protocol == "https") Some(loadConfigOrThrow[HttpsConfig]("whisk.invoker.https")) else None
+//
+//    BasicHttpService.startHttpService(new BasicRasService {}.route, port, httpsConfig)(
+//      actorSystem,
+//      ActorMaterializer.create(actorSystem))
   }
 }
