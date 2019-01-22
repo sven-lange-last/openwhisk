@@ -184,17 +184,28 @@ object Invoker {
 //      actorSystem,
 //      ActorMaterializer.create(actorSystem))
 
-    // CONTAINERD: HTTP PUT request to containerd-bridge
+    // CONTAINERD: HTTP POST / DELETE request to containerd-bridge
     implicit val materializer = ActorMaterializer()
 
-    val responseFuture: Future[HttpResponse] =
+    logger.info(this, "Creating container.")
+    val createFuture: Future[HttpResponse] =
       Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.POST))
 
-    responseFuture.andThen {
+    createFuture.andThen {
       case Success(res) => logger.info(this, s"HTTP result: $res")
       case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
     }
-    Await.result(responseFuture, 5.seconds)
+    Await.result(createFuture, 5.seconds)
+
+    logger.info(this, "Deleting container.")
+    val deleteFuture: Future[HttpResponse] =
+      Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.DELETE))
+
+    deleteFuture.andThen {
+      case Success(res) => logger.info(this, s"HTTP result: $res")
+      case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
+    }
+    Await.result(deleteFuture, 5.seconds)
 
     // CONTAINERD: shutdown required
     logger.info(this, "Shutting down Kamon.")
