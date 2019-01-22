@@ -18,8 +18,8 @@
 package org.apache.openwhisk.core.invoker
 
 import akka.Done
-import akka.actor.{ActorSystem, CoordinatedShutdown}
-// import akka.stream.ActorMaterializer
+import akka.actor.{ActorSystem, CoordinatedShutdown, Terminated}
+import akka.stream.ActorMaterializer
 import com.typesafe.config.ConfigValueFactory
 import kamon.Kamon
 import pureconfig.loadConfigOrThrow
@@ -30,16 +30,18 @@ import org.apache.openwhisk.core.WhiskConfig._
 // import org.apache.openwhisk.core.connector.{MessagingProvider, PingMessage}
 import org.apache.openwhisk.core.containerpool.ContainerPoolConfig
 import org.apache.openwhisk.core.entity.{ExecManifest, InvokerInstanceId}
-import org.apache.openwhisk.core.entity.ActivationEntityLimit
-// import org.apache.openwhisk.core.entity.size._
+// import org.apache.openwhisk.core.entity.ActivationEntityLimit
+import org.apache.openwhisk.core.entity.size._
 // import org.apache.openwhisk.http.{BasicHttpService, BasicRasService}
 // import org.apache.openwhisk.spi.SpiLoader
 import org.apache.openwhisk.utils.ExecutionContextFactory
 
 import scala.concurrent.duration._
-import scala.concurrent.Await
-// import scala.util.{Failure, Try}
-import scala.util.Try
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success, Try}
+
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model._
 
 case class CmdLineArgs(uniqueName: Option[String] = None, id: Option[Int] = None, displayedName: Option[String] = None)
 
@@ -143,10 +145,12 @@ object Invoker {
 
     initKamon(assignedInvokerId)
 
-    val topicBaseName = "invoker"
-    val topicName = topicBaseName + assignedInvokerId
+// CONTAINERD: not required for first prototype
+//    val topicBaseName = "invoker"
+//    val topicName = topicBaseName + assignedInvokerId
 
-    val maxMessageBytes = Some(ActivationEntityLimit.MAX_ACTIVATION_LIMIT)
+// CONTAINERD: not required for first prototype
+//    val maxMessageBytes = Some(ActivationEntityLimit.MAX_ACTIVATION_LIMIT)
     val invokerInstance =
       InvokerInstanceId(assignedInvokerId, cmdLineArgs.uniqueName, cmdLineArgs.displayedName, poolConfig.userMemory)
 
@@ -179,5 +183,38 @@ object Invoker {
 //    BasicHttpService.startHttpService(new BasicRasService {}.route, port, httpsConfig)(
 //      actorSystem,
 //      ActorMaterializer.create(actorSystem))
+
+    // CONTAINERD: HTTP PUT request to containerd-bridge
+    implicit val materializer = ActorMaterializer()
+
+    val responseFuture: Future[HttpResponse] =
+      Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.POST))
+
+    responseFuture.andThen {
+      case Success(res) => logger.info(this, s"HTTP result: $res")
+      case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
+    }
+    Await.result(responseFuture, 5.seconds)
+
+    // CONTAINERD: shutdown required
+    logger.info(this, "Shutting down Kamon.")
+    val kamonStop = Kamon.stopAllReporters().andThen {
+      case u =>
+        logger.info(this, "Kamon shutdown completed.")
+        u
+    }
+
+    Await.result(kamonStop, 5.seconds)
+
+    logger.info(this, "Shutting down actor system.")
+
+    val termination = actorSystem.terminate()
+    logger.info(this, "After actorSystem.terminate().")
+
+    val result: Terminated = Await.result(actorSystem.whenTerminated, 5.seconds)
+
+    println(s"Actor system shutdown complete: '$result'.")
+
+    sys.exit()
   }
 }
