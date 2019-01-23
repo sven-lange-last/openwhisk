@@ -212,7 +212,7 @@ object Invoker {
     }
     Await.result(createFuture, 5.seconds)
 
-    val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, false)
+    val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, true)
     logs.andThen {
       case Success(al) => logger.info(this, s"ActivationLogs: $al")
       case Failure(LogCollectingException(l)) =>
@@ -305,8 +305,17 @@ object Invoker {
       }
   }
 
-  val toFormattedString: Flow[ByteString, String, NotUsed] =
-    Flow[ByteString].map(_.utf8String)
+  val toFormattedString: Flow[ByteString, String, NotUsed] = {
+    Flow[ByteString].map {
+      bs =>
+        val raw = bs.utf8String
+        val idx = raw.indexOf('|')
+        val idx2 = raw.indexOf('|', idx+1)
+        s"date-time: '${raw.substring(0,idx)}', stream: '${raw.substring(idx + 1,idx2)}', content: '${raw.substring(idx2+1, raw.length)}'"
+    }
+
+  }
+
 
   def collectLogs(transid: TransactionId, waitForSentinel: Boolean)(implicit ec: ExecutionContext,
                                                                     mat: Materializer): Future[ActivationLogs] = {
