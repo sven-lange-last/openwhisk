@@ -19,17 +19,19 @@ package org.apache.openwhisk.core.invoker
 
 import java.util.concurrent.TimeoutException
 
-import akka.Done
+import akka.{Done, NotUsed}
 import akka.actor.{ActorSystem, CoordinatedShutdown, Terminated}
 import akka.stream._
 import akka.stream.alpakka.file.scaladsl.FileTailSource
-import akka.stream.scaladsl.{FileIO, Framing}
+import akka.stream.scaladsl.{FileIO, Flow, Framing, Sink}
 import akka.stream.scaladsl.Framing.FramingException
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
 import com.typesafe.config.ConfigValueFactory
 import kamon.Kamon
 import pureconfig.loadConfigOrThrow
+
+import scala.concurrent.ExecutionContext
 // import org.apache.openwhisk.common.Https.HttpsConfig
 import org.apache.openwhisk.common._
 import org.apache.openwhisk.core.{ConfigKeys, WhiskConfig}
@@ -54,6 +56,7 @@ import java.io.File
 import java.nio.file.Path
 import akka.stream.scaladsl.{FileIO, Source}
 import org.apache.openwhisk.http.Messages
+import org.apache.openwhisk.core.entity.ActivationLogs
 
 case class CmdLineArgs(uniqueName: Option[String] = None, id: Option[Int] = None, displayedName: Option[String] = None)
 
@@ -209,8 +212,14 @@ object Invoker {
     }
     Await.result(createFuture, 5.seconds)
 
-    // TODO: need to add something like DockerToActivationFileLogStore.collectLogs() or
-    // DockerToActivationLogStore.collectLogs() below and call it here.
+    val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, false)
+    logs.andThen {
+      case Success(al) => logger.info(this, s"ActivationLogs: $al")
+      case Failure(LogCollectingException(l)) =>
+        logger.error(this, s"LogCollectionException: $l")
+      case Failure(t) => logger.error(this, s"Log collection failed: $t")
+    }
+    Await.result(logs, 5.seconds)
 
     logger.info(this, "Deleting container.")
     val deleteFuture: Future[HttpResponse] =
@@ -296,10 +305,29 @@ object Invoker {
       }
   }
 
-  // TODO: need to add something like DockerToActivationFileLogStore.collectLogs() or
-  // DockerToActivationLogStore.collectLogs() to drive log collection.
-  // It will use the logs() Source provider from above.
+  val toFormattedString: Flow[ByteString, String, NotUsed] =
+    Flow[ByteString].map(_.utf8String)
 
+  def collectLogs(transid: TransactionId, waitForSentinel: Boolean)(implicit ec: ExecutionContext,
+                                                                    mat: Materializer): Future[ActivationLogs] = {
+    val limit = 10.MB
+    logs(limit, waitForSentinel)(transid)
+      .via(toFormattedString)
+      .runWith(Sink.seq)
+      .flatMap { seq =>
+        val possibleErrors = Set(Messages.logFailure, Messages.truncateLogs(limit))
+        val errored = seq.lastOption.exists(last => possibleErrors.exists(last.contains))
+        val logs = ActivationLogs(seq.toVector)
+        if (!errored) {
+          Future.successful(logs)
+        } else {
+          Future.failed(LogCollectingException(logs))
+        }
+      }
+  }
+
+  /** Indicates reading logs has failed either terminally or truncated logs */
+  case class LogCollectingException(partialLogs: ActivationLogs) extends Exception("Failed to read logs")
 }
 
 /**
