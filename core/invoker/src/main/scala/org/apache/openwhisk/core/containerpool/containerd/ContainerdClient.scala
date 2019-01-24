@@ -22,10 +22,9 @@ import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.containerpool.{ContainerAddress, ContainerId}
 
-import scala.concurrent.{blocking, ExecutionContextExecutor, Future}
-import scala.util.Success
+import scala.concurrent.{ExecutionContextExecutor, Future}
 
-case class BridgeConfig(scheme: String, host: String, port: Integer)
+case class BridgeConfig(scheme: String, host: String, port: Int)
 
 class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextExecutor)(implicit logging: Logging,
                                                                                          actorSystem: ActorSystem)

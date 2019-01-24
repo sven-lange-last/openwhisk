@@ -59,7 +59,7 @@ object ContainerdContainer {
 
     //TODO consider pull handling for blackbox image support
 
-    containerdClient.createAndRun(imageToUse).map { c =>
+    containerdClient.createAndRun(imageToUse, name.getOrElse("s")).map { c =>
       new ContainerdContainer(c._1, c._2)
     }
   }

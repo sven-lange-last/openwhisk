@@ -57,10 +57,7 @@ import java.nio.file.Path
 import akka.stream.scaladsl.{FileIO, Source}
 import org.apache.openwhisk.http.Messages
 import org.apache.openwhisk.core.entity.ActivationLogs
-import org.apache.openwhisk.core.containerpool.containerd.{
-  ContainerdContainerFactory,
-  ContainerdContainerFactoryProvider
-}
+import org.apache.openwhisk.core.containerpool.containerd.ContainerdContainerFactoryProvider
 
 case class CmdLineArgs(uniqueName: Option[String] = None, id: Option[Int] = None, displayedName: Option[String] = None)
 
@@ -231,7 +228,7 @@ object Invoker {
     }
     Await.result(createFuture, 5.seconds)
      */
-    val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, true)
+    val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, false)
     logs.andThen {
       case Success(al) => logger.info(this, s"ActivationLogs: $al")
       case Failure(LogCollectingException(l)) =>

@@ -74,11 +74,12 @@ object ContainerdContainerFactoryProvider extends ContainerFactoryProvider {
                         logging: Logging,
                         config: WhiskConfig,
                         instanceId: InvokerInstanceId,
-                        parameters: Map[String, Set[String]]): ContainerFactory =
+                        parameters: Map[String, Set[String]]): ContainerFactory = {
     new ContainerdContainerFactory(instanceId, parameters)(
       actorSystem,
       actorSystem.dispatcher,
       logging,
       new ContainerdClient(loadConfigOrThrow[BridgeConfig](ConfigKeys.containerdContainerFactoryBridge))(
         actorSystem.dispatcher)(logging, actorSystem))
+  }
 }
