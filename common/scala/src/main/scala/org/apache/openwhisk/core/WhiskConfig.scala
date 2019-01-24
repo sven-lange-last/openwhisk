@@ -216,6 +216,10 @@ object ConfigKeys {
   val runc = "whisk.runc"
   val runcTimeouts = s"$runc.timeouts"
 
+  val containerd = "whisk.containerd"
+  val containerdContainerFactory = s"$containerd.container-factory"
+  val containerdContainerFactoryBridge = s"$containerdContainerFactory.bridge"
+
   val tracing = "whisk.tracing"
 
   val containerFactory = "whisk.container-factory"

@@ -57,6 +57,10 @@ import java.nio.file.Path
 import akka.stream.scaladsl.{FileIO, Source}
 import org.apache.openwhisk.http.Messages
 import org.apache.openwhisk.core.entity.ActivationLogs
+import org.apache.openwhisk.core.containerpool.containerd.{
+  ContainerdContainerFactory,
+  ContainerdContainerFactoryProvider
+}
 
 case class CmdLineArgs(uniqueName: Option[String] = None, id: Option[Int] = None, displayedName: Option[String] = None)
 
@@ -203,7 +207,22 @@ object Invoker {
     implicit val materializer = ActorMaterializer()
 
     logger.info(this, "Creating container.")
-    val createFuture: Future[HttpResponse] =
+
+    val cf = ContainerdContainerFactoryProvider.instance(
+      actorSystem,
+      logger,
+      config,
+      invokerInstance,
+      Map.empty[String, Set[String]])
+
+    val cContainerFuture =
+      cf.createContainer(TransactionId.testing, "s", ExecManifest.ImageName("myimage"), false, 128.MB, 1)
+
+    val cContainer = Await.result(cContainerFuture, 5.seconds)
+
+    logger.info(this, s"$cContainer")
+
+    /* val createFuture: Future[HttpResponse] =
       Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.POST))
 
     createFuture.andThen {
@@ -211,7 +230,7 @@ object Invoker {
       case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
     }
     Await.result(createFuture, 5.seconds)
-
+     */
     val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, true)
     logs.andThen {
       case Success(al) => logger.info(this, s"ActivationLogs: $al")
@@ -306,16 +325,14 @@ object Invoker {
   }
 
   val toFormattedString: Flow[ByteString, String, NotUsed] = {
-    Flow[ByteString].map {
-      bs =>
-        val raw = bs.utf8String
-        val idx = raw.indexOf('|')
-        val idx2 = raw.indexOf('|', idx+1)
-        s"date-time: '${raw.substring(0,idx)}', stream: '${raw.substring(idx + 1,idx2)}', content: '${raw.substring(idx2+1, raw.length)}'"
+    Flow[ByteString].map { bs =>
+      val raw = bs.utf8String
+      val idx = raw.indexOf('|')
+      val idx2 = raw.indexOf('|', idx + 1)
+      s"date-time: '${raw.substring(0, idx)}', stream: '${raw.substring(idx + 1, idx2)}', content: '${raw.substring(idx2 + 1, raw.length)}'"
     }
 
   }
-
 
   def collectLogs(transid: TransactionId, waitForSentinel: Boolean)(implicit ec: ExecutionContext,
                                                                     mat: Materializer): Future[ActivationLogs] = {
