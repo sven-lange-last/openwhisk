@@ -21,15 +21,31 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.containerpool.{ContainerAddress, ContainerId}
+import org.apache.openwhisk.core.containerpool.containerd.model.{Version, VersionResponse}
+import org.apache.openwhisk.core.containerpool.containerd.model.VersionJsonProtocol._
 
 import scala.concurrent.{ExecutionContextExecutor, Future}
+// import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+// import spray.json._
+import akka.http.scaladsl.unmarshalling._
+// import akka.http.scaladsl.common.EntityStreamingSupport
+// import akka.http.scaladsl.common.JsonEntityStreamingSupport
+import akka.stream.ActorMaterializer
 
 case class BridgeConfig(scheme: String, host: String, port: Int)
 
 class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextExecutor)(implicit logging: Logging,
                                                                                          actorSystem: ActorSystem)
     extends ContainerdClientAPI {
+
   implicit private val ec = executionContext
+
+  private implicit val materializer = ActorMaterializer()
+
+  def shutdown(): Future[Unit] = Future.successful(materializer.shutdown())
+
+//  implicit val jsonStreamingSupport: JsonEntityStreamingSupport =
+//    EntityStreamingSupport.json()
 
   def pull(imageToUse: String) = ???
 
@@ -38,7 +54,22 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextE
    *
    * @return The version of the docker client cli being used by the invoker
    */
-  def clientVersion: String = ???
+  def clientVersion(): Future[Version] = {
+    Http()
+      .singleRequest(
+        HttpRequest(
+          method = HttpMethods.GET,
+          uri = s"${config.scheme}://${config.host}:${config.port}/${Version.requestPath}"))
+      .flatMap { response =>
+        if (response.status.isSuccess) {
+          Unmarshal(response.entity.withoutSizeLimit).to[VersionResponse].map(Version.fromVersionResponse(_))
+        } else {
+          // This is important, as it drains the entity stream.
+          // Otherwise the connection stays open and the pool dries up.
+          response.discardEntityBytes().future.flatMap(_ => Future.failed(new Throwable("fail")))
+        }
+      }
+  }
 
   /**
    * Spawns a container in detached mode.
@@ -131,7 +162,7 @@ trait ContainerdClientAPI {
    *
    * @return The version of the docker client cli being used by the invoker
    */
-  def clientVersion: String
+  def clientVersion(): Future[Version]
 
   /**
    * Spawns a container in detached mode.

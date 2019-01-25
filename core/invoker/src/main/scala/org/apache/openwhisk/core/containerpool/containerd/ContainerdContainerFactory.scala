@@ -18,6 +18,7 @@
 package org.apache.openwhisk.core.containerpool.containerd
 
 import akka.actor.ActorSystem
+
 import scala.concurrent.ExecutionContext
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.{ConfigKeys, WhiskConfig}
@@ -26,6 +27,7 @@ import org.apache.openwhisk.core.entity.{ByteSize, ExecManifest, InvokerInstance
 import pureconfig.loadConfigOrThrow
 
 import scala.concurrent.Future
+import scala.util.{Failure, Success}
 
 class ContainerdContainerFactory(instanceId: InvokerInstanceId, parameters: Map[String, Set[String]])(
   implicit actorSystem: ActorSystem,
@@ -55,7 +57,13 @@ class ContainerdContainerFactory(instanceId: InvokerInstanceId, parameters: Map[
   }
 
   /** perform any initialization */
-  override def init(): Unit = purgeAllActionContainers()
+  override def init(): Unit = {
+    client.clientVersion().andThen {
+      case Success(v) => logging.info(this, s"containerd bridge version: ${v}")
+      case Failure(f) => logging.error(this, s"Failed to obtain containerd bridge version: ${f}")
+    }
+    purgeAllActionContainers()
+  }
 
   /** cleanup any remaining Containers; should block until complete; should ONLY be run at startup/shutdown */
   override def cleanup(): Unit = {
@@ -75,6 +83,7 @@ object ContainerdContainerFactoryProvider extends ContainerFactoryProvider {
                         config: WhiskConfig,
                         instanceId: InvokerInstanceId,
                         parameters: Map[String, Set[String]]): ContainerFactory = {
+
     new ContainerdContainerFactory(instanceId, parameters)(
       actorSystem,
       actorSystem.dispatcher,

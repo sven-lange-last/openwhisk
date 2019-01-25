@@ -212,6 +212,8 @@ object Invoker {
       invokerInstance,
       Map.empty[String, Set[String]])
 
+    cf.init()
+
     val cContainerFuture =
       cf.createContainer(TransactionId.testing, "s", ExecManifest.ImageName("myimage"), false, 128.MB, 1)
 
