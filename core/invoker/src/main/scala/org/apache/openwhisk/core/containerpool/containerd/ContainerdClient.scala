@@ -18,14 +18,15 @@
 package org.apache.openwhisk.core.containerpool.containerd
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
+import akka.http.scaladsl.model.{HttpMethods, HttpRequest, StatusCode}
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.containerpool.{ContainerAddress, ContainerId}
-import org.apache.openwhisk.core.containerpool.containerd.model.{Version, VersionResponse}
-import org.apache.openwhisk.core.containerpool.containerd.model.VersionJsonProtocol._
+import org.apache.openwhisk.core.containerpool.containerd.model.{Container, Version, VersionResponse}
+import org.apache.openwhisk.core.containerpool.containerd.model.VersionJsonProtocol.VersionResponseFormat
+import org.apache.openwhisk.core.containerpool.containerd.model.ContainerJsonProtocol.ContainerFormat
 
-import scala.concurrent.{ExecutionContextExecutor, Future}
-// import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+import scala.concurrent.{ExecutionContext, Future}
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 // import spray.json._
 import akka.http.scaladsl.unmarshalling._
 // import akka.http.scaladsl.common.EntityStreamingSupport
@@ -34,8 +35,8 @@ import akka.stream.ActorMaterializer
 
 case class BridgeConfig(scheme: String, host: String, port: Int)
 
-class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextExecutor)(implicit logging: Logging,
-                                                                                         actorSystem: ActorSystem)
+class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)(implicit logging: Logging,
+                                                                                 actorSystem: ActorSystem)
     extends ContainerdClientAPI {
 
   implicit private val ec = executionContext
@@ -54,7 +55,7 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextE
    *
    * @return The version of the docker client cli being used by the invoker
    */
-  def clientVersion(): Future[Version] = {
+  def clientVersion(): Future[Either[Version, StatusCode]] = {
     Http()
       .singleRequest(
         HttpRequest(
@@ -62,11 +63,35 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextE
           uri = s"${config.scheme}://${config.host}:${config.port}/${Version.requestPath}"))
       .flatMap { response =>
         if (response.status.isSuccess) {
-          Unmarshal(response.entity.withoutSizeLimit).to[VersionResponse].map(Version.fromVersionResponse(_))
+          Unmarshal(response.entity.withoutSizeLimit)
+            .to[VersionResponse]
+            .map(vr => Left.apply(Version.fromVersionResponse(vr)))
         } else {
           // This is important, as it drains the entity stream.
           // Otherwise the connection stays open and the pool dries up.
-          response.discardEntityBytes().future.flatMap(_ => Future.failed(new Throwable("fail")))
+          response.discardEntityBytes().future.map(_ => Right(response.status))
+        }
+      }
+  }
+
+  /**
+   * Deletes the container
+   * @param name the name of the container to delete
+   * @return The version of the docker client cli being used by the invoker
+   */
+  def delete(id: ContainerId)(implicit transid: TransactionId): Future[Either[Container, StatusCode]] = {
+    Http()
+      .singleRequest(
+        HttpRequest(
+          method = HttpMethods.DELETE,
+          uri = s"${config.scheme}://${config.host}:${config.port}/container/${id.asString}"))
+      .flatMap { response =>
+        if (response.status.isSuccess) {
+          Unmarshal(response.entity.withoutSizeLimit).to[Container].map(Left.apply(_))
+        } else {
+          // This is important, as it drains the entity stream.
+          // Otherwise the connection stays open and the pool dries up.
+          response.discardEntityBytes().future.map(_ => Right(response.status))
         }
       }
   }
@@ -86,7 +111,7 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContextE
           uri = s"${config.scheme}://${config.host}:${config.port}/container/${name}",
           method = HttpMethods.POST))
       .map { _ =>
-        (ContainerId("TODO_ID"), ContainerAddress("127.0.0.1"))
+        (ContainerId(name), ContainerAddress("127.0.0.1"))
       }
   }
 
@@ -162,7 +187,7 @@ trait ContainerdClientAPI {
    *
    * @return The version of the docker client cli being used by the invoker
    */
-  def clientVersion(): Future[Version]
+  def clientVersion(): Future[Either[Version, StatusCode]]
 
   /**
    * Spawns a container in detached mode.
@@ -173,6 +198,13 @@ trait ContainerdClientAPI {
    */
   def createAndRun(image: String, name: String)(
     implicit transid: TransactionId): Future[(ContainerId, ContainerAddress)]
+
+  /**
+   * Deletes the container
+   * @param name the name of the container to delete
+   * @return The version of the docker client cli being used by the invoker
+   */
+  def delete(id: ContainerId)(implicit transid: TransactionId): Future[Either[Container, StatusCode]]
 
   /**
    * Gets the IP address of a given container.

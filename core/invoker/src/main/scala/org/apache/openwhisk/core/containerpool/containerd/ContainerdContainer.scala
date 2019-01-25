@@ -80,7 +80,11 @@ class ContainerdContainer(protected val id: ContainerId, protected val addr: Con
   override def resume()(implicit transid: TransactionId): Future[Unit] = super.resume()
 
   /** Completely destroys this instance of the container. */
-  override def destroy()(implicit transid: TransactionId): Future[Unit] = super.destroy()
+  override def destroy()(implicit transid: TransactionId): Future[Unit] = {
+    super.destroy()
+    containerdClient.delete(id).map(_ => ())
+
+  }
 
   /** Obtains logs up to a given threshold from the container. Optionally waits for a sentinel to appear. */
   override def logs(limit: ByteSize, waitForSentinel: Boolean)(

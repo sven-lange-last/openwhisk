@@ -50,8 +50,8 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success, Try}
 
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
+//import akka.http.scaladsl.Http
+//import akka.http.scaladsl.model._
 import java.io.File
 import java.nio.file.Path
 import akka.stream.scaladsl.{FileIO, Source}
@@ -240,14 +240,15 @@ object Invoker {
     Await.result(logs, 5.seconds)
 
     logger.info(this, "Deleting container.")
-    val deleteFuture: Future[HttpResponse] =
+
+    /** val deleteFuture: Future[HttpResponse] =
       Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.DELETE))
 
     deleteFuture.andThen {
       case Success(res) => logger.info(this, s"HTTP result: $res")
       case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
-    }
-    Await.result(deleteFuture, 5.seconds)
+    } **/
+    Await.result(cContainer.destroy()(TransactionId.testing), 5.seconds)
 
     // CONTAINERD: shutdown required
     logger.info(this, "Shutting down Kamon.")
