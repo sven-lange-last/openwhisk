@@ -60,6 +60,9 @@ class ContainerdContainerFactory(instanceId: InvokerInstanceId, parameters: Map[
   override def init(): Unit = {
     client.clientVersion().andThen {
       case Success(v) => logging.info(this, s"containerd bridge version: ${v}")
+      // BridgeCommunicationException(
+      case Failure(BridgeCommunicationException(s, m)) =>
+        logging.error(this, s"Failed to obtain containerd bridge version with StatusCode: ${s}. Error: ${m}")
       case Failure(f) => logging.error(this, s"Failed to obtain containerd bridge version: ${f}")
     }
     purgeAllActionContainers()

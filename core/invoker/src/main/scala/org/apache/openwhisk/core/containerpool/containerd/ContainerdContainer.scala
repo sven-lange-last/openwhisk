@@ -60,7 +60,7 @@ object ContainerdContainer {
     //TODO consider pull handling for blackbox image support
 
     containerdClient.createAndRun(imageToUse, name.getOrElse("s")).map { c =>
-      new ContainerdContainer(c._1, c._2)
+      new ContainerdContainer(ContainerId(c.name), ContainerAddress("localhost"))
     }
   }
 }
@@ -83,7 +83,6 @@ class ContainerdContainer(protected val id: ContainerId, protected val addr: Con
   override def destroy()(implicit transid: TransactionId): Future[Unit] = {
     super.destroy()
     containerdClient.delete(id).map(_ => ())
-
   }
 
   /** Obtains logs up to a given threshold from the container. Optionally waits for a sentinel to appear. */
