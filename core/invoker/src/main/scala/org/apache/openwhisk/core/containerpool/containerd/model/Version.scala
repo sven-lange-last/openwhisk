@@ -25,8 +25,8 @@ import org.apache.openwhisk.core.containerpool.containerd.model.BridgeJsonProtoc
 import org.apache.openwhisk.core.containerpool.containerd.model.ContainerdJsonProtocol.ContainerdFormat
 
 
-case class Containerd(component: String, description: String, fullVersion: String, major: Int, minor: Int, patch: Int)
-case class Bridge(component: String, description: String, fullVersion: String, major: Int, minor: Int, patch: Int)
+case class Containerd(id: String, description: String, fullVersion: String, major: Int, minor: Int, patch: Int)
+case class Bridge(id: String, description: String, fullVersion: String, major: Int, minor: Int, patch: Int)
 case class Version(bridge: Bridge, containerd: Containerd)
 
 object BridgeJsonProtocol extends SprayJsonSupport with DefaultJsonProtocol {
