@@ -16,6 +16,8 @@
  */
 
 package org.apache.openwhisk.core.containerpool.containerd
+import java.nio.file.Path
+
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest, StatusCode}
@@ -28,6 +30,11 @@ import org.apache.openwhisk.core.containerpool.containerd.model.VersionJsonProto
 import scala.collection.immutable.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.stream.alpakka.file.scaladsl.FileTailSource
+import akka.stream.scaladsl.{FileIO, Source}
+import akka.util.ByteString
+
+import scala.concurrent.duration.FiniteDuration
 
 // import spray.json._
 import akka.http.scaladsl.unmarshalling._
@@ -114,24 +121,41 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
    */
   def createAndRun(image: String, name: String)(implicit transid: TransactionId): Future[Container] = {
     Http()
-      .singleRequest(
-        HttpRequest(
-          uri = s"${config.scheme}://${config.host}:${config.port}/container/${name}",
-          headers = Seq(transid.toHeader),
-          method = HttpMethods.POST))
-      .flatMap { response =>
-        if (response.status.isSuccess) {
-          Unmarshal(response.entity.withoutSizeLimit).to[Container]
-        } else {
-          response
-            .discardEntityBytes()
-            .future
-            .flatMap(_ =>
-              Future.failed(
-                new BridgeCommunicationException(response.status, s"Unable to create container with name: ${name}")))
-        }
+    .singleRequest(
+      HttpRequest(
+        uri = s"${config.scheme}://${config.host}:${config.port}/container/${name}",
+        headers = Seq(transid.toHeader),
+        method = HttpMethods.POST))
+    .flatMap { response =>
+      if (response.status.isSuccess) {
+        Unmarshal(response.entity.withoutSizeLimit).to[Container]
+      } else {
+        response
+          .discardEntityBytes()
+          .future
+          .flatMap(_ =>
+            Future.failed(
+              new BridgeCommunicationException(response.status, s"Unable to create container with name: ${name}")))
       }
+    }
   }
+
+  private val readChunkSize = 8192 // bytes
+  def rawContainerLogs(containerdLogFilePath: Path,
+                       fromPos: Long,
+                       pollInterval: Option[FiniteDuration]): Source[ByteString, Any] =
+    try {
+      // If there is no waiting interval, we can end the stream early by reading just what is there from file.
+      pollInterval match {
+        case Some(interval) => FileTailSource(containerdLogFilePath, readChunkSize, fromPos, interval)
+        case None           => FileIO.fromPath(containerdLogFilePath, readChunkSize, fromPos)
+      }
+    } catch {
+      case t: Throwable => Source.failed(t)
+    }
+
+
+
   /**
   /**
  * Gets the IP address of a given container.

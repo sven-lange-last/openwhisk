@@ -16,15 +16,24 @@
  */
 
 package org.apache.openwhisk.core.containerpool.containerd
+import java.io.File
+import java.util.concurrent.TimeoutException
+
 import akka.actor.ActorSystem
-import akka.stream.scaladsl.Source
+import akka.stream._
+import akka.stream.scaladsl.Framing.FramingException
+import akka.stream.scaladsl.{Framing, Source}
+import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.util.ByteString
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.entity.size._
 import org.apache.openwhisk.core.containerpool._
 import org.apache.openwhisk.core.entity.ByteSize
 import org.apache.openwhisk.core.entity.ExecManifest.ImageName
+import org.apache.openwhisk.http.Messages
 
+import scala.concurrent.duration._
+import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future}
 
 object ContainerdContainer {
@@ -86,6 +95,97 @@ class ContainerdContainer(protected val id: ContainerId, protected val addr: Con
   }
 
   /** Obtains logs up to a given threshold from the container. Optionally waits for a sentinel to appear. */
-  override def logs(limit: ByteSize, waitForSentinel: Boolean)(
-    implicit transid: TransactionId): Source[ByteString, Any] = ???
+  override def logs(limit: ByteSize, waitForSentinel: Boolean)(implicit transid: TransactionId): Source[ByteString, Any] = {
+    //TODO get path to logfile from ContainerdContainer
+    containerdClient
+      .rawContainerLogs((new File("/tmp/s.log")).toPath, 0L, if (waitForSentinel) Some(filePollInterval) else None)
+      // This stage only throws 'FramingException' so we cannot decide whether we got truncated due to a size
+      // constraint (like StreamLimitReachedException below) or due to the file being truncated itself.
+      .via(Framing.delimiter(delimiter, limit.toBytes.toInt))
+      .limitWeighted(limit.toBytes) { obj =>
+        // Adding + 1 since we know there's a newline byte being read
+        val size = obj.size + 1
+        size
+      }
+      .via(new CompleteAfterOccurrences(_.containsSlice(ContainerdContainer.byteStringSentinel), 2, waitForSentinel))
+      // As we're reading the logs after the activation has finished the invariant is that all loglines are already
+      // written and we mostly await them being flushed by the docker daemon. Therefore we can timeout based on the time
+      // between two loglines appear without relying on the log frequency in the action itself.
+      .idleTimeout(waitForLogs)
+      .recover {
+        case _: StreamLimitReachedException =>
+          // While the stream has already ended by failing the limitWeighted stage above, we inject a truncation
+          // notice downstream, which will be processed as usual. This will be the last element of the stream.
+          ByteString(Messages.truncateLogs(limit))
+        case _: OccurrencesNotFoundException | _: FramingException | _: TimeoutException =>
+          // Stream has already ended and we insert a notice that data might be missing from the logs. While a
+          // FramingException can also mean exceeding the limits, we cannot decide which case happened so we resort
+          // to the general error message. This will be the last element of the stream.
+          ByteString(Messages.logFailure)
+      }
+  }
+
+  /** Delimiter used to split log-lines as written by the json-log-driver. */
+  private val delimiter = ByteString("\n")
+  protected val waitForLogs: FiniteDuration = 2.seconds
+  protected val filePollInterval: FiniteDuration = 5.milliseconds
+
 }
+
+/**
+* Completes the stream once the given predicate is fulfilled by N events in the stream.
+*
+* '''Emits when''' an upstream element arrives and does not fulfill the predicate
+*
+* '''Backpressures when''' downstream backpressures
+*
+* '''Completes when''' upstream completes or predicate is fulfilled N times
+*
+* '''Cancels when''' downstream cancels
+*
+* '''Errors when''' stream completes, not enough occurrences have been found and errorOnNotEnough is true
+*/
+class CompleteAfterOccurrences[T](isInEvent: T => Boolean, neededOccurrences: Int, errorOnNotEnough: Boolean)
+  extends GraphStage[FlowShape[T, T]] {
+  val in: Inlet[T] = Inlet[T]("WaitForOccurrences.in")
+  val out: Outlet[T] = Outlet[T]("WaitForOccurrences.out")
+  override val shape: FlowShape[T, T] = FlowShape.of(in, out)
+
+  override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
+    new GraphStageLogic(shape) with InHandler with OutHandler {
+      private var occurrencesFound = 0
+
+      override def onPull(): Unit = pull(in)
+
+      override def onPush(): Unit = {
+        val element = grab(in)
+        val isOccurrence = isInEvent(element)
+
+        if (isOccurrence) occurrencesFound += 1
+
+        if (occurrencesFound >= neededOccurrences) {
+          completeStage()
+        } else {
+          if (isOccurrence) {
+            pull(in)
+          } else {
+            push(out, element)
+          }
+        }
+      }
+
+      override def onUpstreamFinish(): Unit = {
+        if (occurrencesFound >= neededOccurrences || !errorOnNotEnough) {
+          completeStage()
+        } else {
+          failStage(OccurrencesNotFoundException(neededOccurrences, occurrencesFound))
+        }
+      }
+
+      setHandlers(in, out, this)
+    }
+}
+
+/** Indicates that Occurrences have not been found in the stream */
+case class OccurrencesNotFoundException(neededCount: Int, actualCount: Int)
+  extends RuntimeException(s"Only found $actualCount out of $neededCount occurrences.")

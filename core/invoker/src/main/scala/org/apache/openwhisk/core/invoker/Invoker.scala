@@ -17,21 +17,19 @@
 
 package org.apache.openwhisk.core.invoker
 
-import java.util.concurrent.TimeoutException
 
-import akka.{Done, NotUsed}
+import akka.Done
 import akka.actor.{ActorSystem, CoordinatedShutdown, Terminated}
 import akka.stream._
-import akka.stream.alpakka.file.scaladsl.FileTailSource
-import akka.stream.scaladsl.{FileIO, Flow, Framing, Sink}
-import akka.stream.scaladsl.Framing.FramingException
-import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
-import akka.util.ByteString
+//import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import com.typesafe.config.ConfigValueFactory
 import kamon.Kamon
+import org.apache.openwhisk.core.containerpool.logging.{ContainerdToActivationLogStore, LogCollectingException}
+import org.apache.openwhisk.core.entity.ExecManifest.{ImageName, RuntimeManifest}
+import org.apache.openwhisk.core.entity._
 import pureconfig.loadConfigOrThrow
 
-import scala.concurrent.ExecutionContext
+// import scala.concurrent.ExecutionContext
 // import org.apache.openwhisk.common.Https.HttpsConfig
 import org.apache.openwhisk.common._
 import org.apache.openwhisk.core.{ConfigKeys, WhiskConfig}
@@ -41,7 +39,7 @@ import org.apache.openwhisk.core.containerpool.ContainerPoolConfig
 import org.apache.openwhisk.core.entity.{ExecManifest, InvokerInstanceId}
 // import org.apache.openwhisk.core.entity.ActivationEntityLimit
 import org.apache.openwhisk.core.entity.size._
-import org.apache.openwhisk.core.entity.ByteSize
+//import org.apache.openwhisk.core.entity.ByteSize
 // import org.apache.openwhisk.http.{BasicHttpService, BasicRasService}
 // import org.apache.openwhisk.spi.SpiLoader
 import org.apache.openwhisk.utils.ExecutionContextFactory
@@ -52,10 +50,10 @@ import scala.util.{Failure, Success, Try}
 
 //import akka.http.scaladsl.Http
 //import akka.http.scaladsl.model._
-import java.io.File
-import java.nio.file.Path
-import akka.stream.scaladsl.{FileIO, Source}
-import org.apache.openwhisk.http.Messages
+//import java.io.File
+//import java.nio.file.Path
+//import akka.stream.scaladsl.{FileIO, Source}
+//import org.apache.openwhisk.http.Messages
 import org.apache.openwhisk.core.entity.ActivationLogs
 import org.apache.openwhisk.core.containerpool.containerd.ContainerdContainerFactoryProvider
 
@@ -220,17 +218,11 @@ object Invoker {
     val cContainer = Await.result(cContainerFuture, 5.seconds)
 
     logger.info(this, s"$cContainer")
+    val actionExec = CodeExecAsString(RuntimeManifest("actionKind", ImageName("testImage")), "testCode", None)
+    val testAction = ExecutableWhiskAction(EntityPath("dummynamespace"), EntityName("dummyaction"), actionExec, limits = ActionLimits())
 
-    /* val createFuture: Future[HttpResponse] =
-      Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.POST))
+    val logs: Future[ActivationLogs] = new ContainerdToActivationLogStore(actorSystem).collectLogs(TransactionId.testing, null, null, cContainer, testAction)
 
-    createFuture.andThen {
-      case Success(res) => logger.info(this, s"HTTP result: $res")
-      case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
-    }
-    Await.result(createFuture, 5.seconds)
-     */
-    val logs: Future[ActivationLogs] = collectLogs(TransactionId.testing, false)
     logs.andThen {
       case Success(al) => logger.info(this, s"ActivationLogs: $al")
       case Failure(LogCollectingException(l)) =>
@@ -241,13 +233,6 @@ object Invoker {
 
     logger.info(this, "Deleting container.")
 
-    /** val deleteFuture: Future[HttpResponse] =
-      Http().singleRequest(HttpRequest(uri = "http://127.0.0.1:8080/container/s", method = HttpMethods.DELETE))
-
-    deleteFuture.andThen {
-      case Success(res) => logger.info(this, s"HTTP result: $res")
-      case Failure(t)   => logger.error(this, s"HTTP request failed: $t")
-    } **/
     Await.result(cContainer.destroy()(TransactionId.testing), 5.seconds)
 
     // CONTAINERD: shutdown required
@@ -271,7 +256,7 @@ object Invoker {
 
     sys.exit()
   }
-
+   /**
   private val readChunkSize = 8192 // bytes
   def rawContainerLogs(containerdLogFilePath: Path,
                        fromPos: Long,
@@ -288,9 +273,10 @@ object Invoker {
 
   protected val waitForLogs: FiniteDuration = 2.seconds
   protected val filePollInterval: FiniteDuration = 5.milliseconds
+   **/
 
   /** Delimiter used to split log-lines as written by the json-log-driver. */
-  private val delimiter = ByteString("\n")
+  /** private val delimiter = ByteString("\n")
 
   val ACTIVATION_LOG_SENTINEL = "XXX_THE_END_OF_A_WHISK_ACTIVATION_XXX"
 
@@ -353,63 +339,6 @@ object Invoker {
   }
 
   /** Indicates reading logs has failed either terminally or truncated logs */
-  case class LogCollectingException(partialLogs: ActivationLogs) extends Exception("Failed to read logs")
+  case class LogCollectingException(partialLogs: ActivationLogs) extends Exception("Failed to read logs") **/
 }
 
-/**
- * Completes the stream once the given predicate is fulfilled by N events in the stream.
- *
- * '''Emits when''' an upstream element arrives and does not fulfill the predicate
- *
- * '''Backpressures when''' downstream backpressures
- *
- * '''Completes when''' upstream completes or predicate is fulfilled N times
- *
- * '''Cancels when''' downstream cancels
- *
- * '''Errors when''' stream completes, not enough occurrences have been found and errorOnNotEnough is true
- */
-class CompleteAfterOccurrences[T](isInEvent: T => Boolean, neededOccurrences: Int, errorOnNotEnough: Boolean)
-    extends GraphStage[FlowShape[T, T]] {
-  val in: Inlet[T] = Inlet[T]("WaitForOccurrences.in")
-  val out: Outlet[T] = Outlet[T]("WaitForOccurrences.out")
-  override val shape: FlowShape[T, T] = FlowShape.of(in, out)
-
-  override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
-    new GraphStageLogic(shape) with InHandler with OutHandler {
-      private var occurrencesFound = 0
-
-      override def onPull(): Unit = pull(in)
-
-      override def onPush(): Unit = {
-        val element = grab(in)
-        val isOccurrence = isInEvent(element)
-
-        if (isOccurrence) occurrencesFound += 1
-
-        if (occurrencesFound >= neededOccurrences) {
-          completeStage()
-        } else {
-          if (isOccurrence) {
-            pull(in)
-          } else {
-            push(out, element)
-          }
-        }
-      }
-
-      override def onUpstreamFinish(): Unit = {
-        if (occurrencesFound >= neededOccurrences || !errorOnNotEnough) {
-          completeStage()
-        } else {
-          failStage(OccurrencesNotFoundException(neededOccurrences, occurrencesFound))
-        }
-      }
-
-      setHandlers(in, out, this)
-    }
-}
-
-/** Indicates that Occurrences have not been found in the stream */
-case class OccurrencesNotFoundException(neededCount: Int, actualCount: Int)
-    extends RuntimeException(s"Only found $actualCount out of $neededCount occurrences.")
