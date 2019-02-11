@@ -97,7 +97,7 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
         HttpRequest(
           method = HttpMethods.DELETE,
           headers = Seq(transid.toHeader),
-          uri = s"${config.scheme}://${config.host}:${config.port}/container/${id.asString}"))
+          uri = s"${config.scheme}://${config.host}:${config.port}/containers/${id.asString}"))
       .flatMap { response =>
         if (response.status.isSuccess) {
           Unmarshal(response.entity.withoutSizeLimit).to[Container]
@@ -123,7 +123,7 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
     Http()
     .singleRequest(
       HttpRequest(
-        uri = s"${config.scheme}://${config.host}:${config.port}/container/${name}",
+        uri = s"${config.scheme}://${config.host}:${config.port}/containers/${name}",
         headers = Seq(transid.toHeader),
         method = HttpMethods.POST))
     .flatMap { response =>

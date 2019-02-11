@@ -39,7 +39,7 @@ object ContainerdToActivationLogStore {
     Flow[ByteString].map { bs =>
       val raw = bs.utf8String
       val idx = raw.indexOf('|')
-      val idx2 = raw.indexOf('|', idx + 1)  //TODO robustness - dies IndexOutOfBounds -1 if
+      val idx2 = raw.indexOf('|', idx + 1)  //TODO robustness - dies IndexOutOfBounds -1 if sentinel expectation doesn't match
       s"date-time: '${raw.substring(0, idx)}', stream: '${raw.substring(idx + 1, idx2)}', content: '${raw.substring(idx2 + 1, raw.length)}'"
     }
   }
@@ -57,7 +57,7 @@ class ContainerdToActivationLogStore(system: ActorSystem) extends LogStore {
   implicit val mat: ActorMaterializer = ActorMaterializer()(system)
 
 
-  override val containerParameters = Map.empty
+  override val containerParameters: Map[String, Set[String]] = Map.empty
 
   /* As logs are already part of the activation record, just return that bit of it */
   override def fetchLogs(activation: WhiskActivation, context: UserContext): Future[ActivationLogs] =
