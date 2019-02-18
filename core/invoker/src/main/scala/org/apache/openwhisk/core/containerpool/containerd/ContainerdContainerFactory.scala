@@ -52,8 +52,14 @@ class ContainerdContainerFactory(instanceId: InvokerInstanceId, parameters: Map[
   }
 
   def purgeAllActionContainers(): Unit = {
-    //TODO Implement
-    println("TODO purge all containers")
+    implicit val transid = TransactionId.invoker
+    client.purge().andThen {
+      case Success(v) => logging.info(this, s"purged ${v.deleted} action containers")
+      // BridgeCommunicationException(
+      case Failure(BridgeCommunicationException(s, m)) =>
+        logging.error(this, s"Failed to purge action containers with StatusCode: ${s}. Error: ${m}")
+      case Failure(f) => logging.error(this, s"Failed to purge action containers: ${f}")
+    }
   }
 
   /** perform any initialization */

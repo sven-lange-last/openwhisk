@@ -15,30 +15,20 @@
  * limitations under the License.
  */
 
+
 package org.apache.openwhisk.core.containerpool.containerd.model
+
+import spray.json._
+// import DefaultJsonProtocol._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 
-import spray.json.DefaultJsonProtocol
 
-case class Container(id: String, name: String, image: String, capturedOutput: String, ip: Option[String])
+case class PurgeResponse(deleted: Int)
 
-case class ContainerRequest(image: String, name: String)
-
-case class ContainerDeleteResponse(message: String)
-
-object ContainerJsonProtocol extends SprayJsonSupport with DefaultJsonProtocol {
-  implicit val ContainerFormat = jsonFormat5(Container)
-  implicit val ContainerRequestFormat = jsonFormat2(ContainerRequest)
-  implicit val ContainerDeleteResponseFormat = jsonFormat1(ContainerDeleteResponse)
+object PurgeResponseJsonProtocol extends SprayJsonSupport with DefaultJsonProtocol {
+  implicit val PurgeResponseFormat = jsonFormat1(PurgeResponse)
+  val requestPath = "ops/containers/purge"
 }
 
 
-/**
-{
-  "id": "string",
-  "name": "string",
-  "image": "string",
-  "logfile": "string",
-  "ip": "string"
-}
-**/
+

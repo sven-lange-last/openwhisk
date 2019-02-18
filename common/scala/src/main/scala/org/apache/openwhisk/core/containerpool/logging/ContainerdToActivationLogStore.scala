@@ -32,6 +32,7 @@ import org.apache.openwhisk.core.database.UserContext
 import scala.concurrent.{ExecutionContext, Future}
 
 
+
 object ContainerdToActivationLogStore {
 
   /** Transforms '|' separated strings */
@@ -39,8 +40,12 @@ object ContainerdToActivationLogStore {
     Flow[ByteString].map { bs =>
       val raw = bs.utf8String
       val idx = raw.indexOf('|')
-      val idx2 = raw.indexOf('|', idx + 1)  //TODO robustness - dies IndexOutOfBounds -1 if sentinel expectation doesn't match
-      s"date-time: '${raw.substring(0, idx)}', stream: '${raw.substring(idx + 1, idx2)}', content: '${raw.substring(idx2 + 1, raw.length)}'"
+      val idx2 = raw.indexOf('|', idx + 1)
+      if (idx >= 0 && idx2 >= 0) {
+        f"${raw.substring(0, idx)}%-30s ${raw.substring(idx + 1, idx2)}: ${raw.substring(idx2 + 1, raw.length).trim()}"
+      }
+      else
+        f"date-time: 'UNKNOWN', stream: 'UNKNOWN', content: '${raw.trim}'"  //TODO robustness - dies IndexOutOfBounds -1 if sentinel expectation doesn't match
     }
   }
 }

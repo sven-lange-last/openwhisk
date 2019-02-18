@@ -20,16 +20,21 @@ import java.nio.file.Path
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{HttpMethods, HttpRequest, StatusCode}
+import akka.http.scaladsl.model.RequestEntity
+import akka.http.scaladsl.model._
 import org.apache.openwhisk.common.{Logging, TransactionId}
 import org.apache.openwhisk.core.containerpool.ContainerId
-import org.apache.openwhisk.core.containerpool.containerd.model.{Container, Version, VersionJsonProtocol}
+import org.apache.openwhisk.core.containerpool.containerd.model._
 import org.apache.openwhisk.core.containerpool.containerd.model.ContainerJsonProtocol.ContainerFormat
+import org.apache.openwhisk.core.containerpool.containerd.model.ContainerJsonProtocol.ContainerDeleteResponseFormat
+import org.apache.openwhisk.core.containerpool.containerd.model.ContainerJsonProtocol.ContainerRequestFormat
 import org.apache.openwhisk.core.containerpool.containerd.model.VersionJsonProtocol.VersionFormat
+import org.apache.openwhisk.core.containerpool.containerd.model.PurgeResponseJsonProtocol.PurgeResponseFormat
 
 import scala.collection.immutable.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.http.scaladsl.marshalling._
 import akka.stream.alpakka.file.scaladsl.FileTailSource
 import akka.stream.scaladsl.{FileIO, Source}
 import akka.util.ByteString
@@ -38,6 +43,7 @@ import scala.concurrent.duration.FiniteDuration
 
 // import spray.json._
 import akka.http.scaladsl.unmarshalling._
+
 // import akka.http.scaladsl.common.EntityStreamingSupport
 // import akka.http.scaladsl.common.JsonEntityStreamingSupport
 import akka.stream.ActorMaterializer
@@ -87,11 +93,39 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
   }
 
   /**
-   * Deletes the container
-   * @param id the ContainerId of the container to delete
-   * @return Future
-   */
-  def delete(id: ContainerId)(implicit transid: TransactionId): Future[Container] = {
+    * The version number of the docker client cli
+    *
+    * @return The version of the docker client cli being used by the invoker
+    */
+  def purge()(implicit transid: TransactionId): Future[PurgeResponse] = {
+    Http()
+      .singleRequest(
+        HttpRequest(
+          method = HttpMethods.POST,
+          headers = Seq(transid.toHeader),
+          uri = s"${config.scheme}://${config.host}:${config.port}/${PurgeResponseJsonProtocol.requestPath}"))
+      .flatMap { response =>
+        if (response.status.isSuccess) {
+          Unmarshal(response.entity.withoutSizeLimit)
+            .to[PurgeResponse]
+        } else {
+          // This is important, as it drains the entity stream.
+          // Otherwise the connection stays open and the pool dries up.
+          response
+            .discardEntityBytes()
+            .future
+            .flatMap(_ =>
+              Future.failed(new BridgeCommunicationException(response.status, "failed to purge action containers")))
+        }
+      }
+  }
+
+  /**
+    * Deletes the container
+    * @param id the ContainerId of the container to delete
+    * @return Future
+    */
+  def delete(id: ContainerId)(implicit transid: TransactionId): Future[ContainerDeleteResponse] = {
     Http()
       .singleRequest(
         HttpRequest(
@@ -100,7 +134,7 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
           uri = s"${config.scheme}://${config.host}:${config.port}/containers/${id.asString}"))
       .flatMap { response =>
         if (response.status.isSuccess) {
-          Unmarshal(response.entity.withoutSizeLimit).to[Container]
+          Unmarshal(response.entity.withoutSizeLimit).to[ContainerDeleteResponse]
         } else {
           response
             .discardEntityBytes()
@@ -112,6 +146,60 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
       }
   }
 
+
+  /**
+    * Suspends the container
+    * @param id the ContainerId of the container to delete
+    * @return Future
+    */
+  def suspend(id: ContainerId)(implicit transid: TransactionId): Future[Unit] = {
+    Http()
+      .singleRequest(
+        HttpRequest(
+          method = HttpMethods.POST,
+          headers = Seq(transid.toHeader),
+          uri = s"${config.scheme}://${config.host}:${config.port}/containers/${id.asString}/suspend"))
+      .flatMap { response =>
+        if (response.status.isSuccess) {
+          response.discardEntityBytes().future().map(_ => () )
+        } else {
+          response
+            .discardEntityBytes()
+            .future
+            .flatMap(_ =>
+              Future.failed(
+                new BridgeCommunicationException(response.status, s"Unable to suspend container: ${id.asString}")))
+        }
+      }
+  }
+
+
+  /**
+    * Suspends the container
+    * @param id the ContainerId of the container to delete
+    * @return Future
+    */
+  def resume(id: ContainerId)(implicit transid: TransactionId): Future[Unit] = {
+    Http()
+      .singleRequest(
+        HttpRequest(
+          method = HttpMethods.POST,
+          headers = Seq(transid.toHeader),
+          uri = s"${config.scheme}://${config.host}:${config.port}/containers/${id.asString}/resume"))
+      .flatMap { response =>
+        if (response.status.isSuccess) {
+          response.discardEntityBytes().future().map(_ => () )
+        } else {
+          response
+            .discardEntityBytes()
+            .future
+            .flatMap(_ =>
+              Future.failed(
+                new BridgeCommunicationException(response.status, s"Unable to suspend container: ${id.asString}")))
+        }
+      }
+  }
+
   /**
    * Spawns a container in detached mode.
    *
@@ -119,26 +207,27 @@ class ContainerdClient(config: BridgeConfig)(executionContext: ExecutionContext)
    * @param args arguments for the docker run command
    * @return id of the started container
    */
-  def createAndRun(image: String, name: String)(implicit transid: TransactionId): Future[Container] = {
-    Http()
-    .singleRequest(
-      HttpRequest(
-        uri = s"${config.scheme}://${config.host}:${config.port}/containers/${name}",
+  def createAndRun(image: String, name: String)(implicit transid: TransactionId): Future[Container] =
+    Marshal((ContainerRequest(image, name))).to[RequestEntity].flatMap { entity =>
+      Http().singleRequest(HttpRequest(
+        method = HttpMethods.POST,
+        uri = s"${config.scheme}://${config.host}:${config.port}/containers",
         headers = Seq(transid.toHeader),
-        method = HttpMethods.POST))
-    .flatMap { response =>
-      if (response.status.isSuccess) {
-        Unmarshal(response.entity.withoutSizeLimit).to[Container]
-      } else {
-        response
-          .discardEntityBytes()
-          .future
-          .flatMap(_ =>
-            Future.failed(
-              new BridgeCommunicationException(response.status, s"Unable to create container with name: ${name}")))
-      }
+        entity = entity)
+        ).flatMap { response =>
+          if (response.status.isSuccess) {
+            Unmarshal(response.entity.withoutSizeLimit).to[Container]
+          } else {
+            response
+              .discardEntityBytes()
+              .future
+              .flatMap(_ =>
+                Future.failed(
+                  new BridgeCommunicationException(response.status, s"Unable to create container with name: ${name}")))
+          }
+        }
     }
-  }
+
 
   private val readChunkSize = 8192 // bytes
   def rawContainerLogs(containerdLogFilePath: Path,
@@ -246,7 +335,7 @@ trait ContainerdClientAPI {
    * @param id the ContainerId of the container to delete
    * @return The deleted container
    */
-  def delete(id: ContainerId)(implicit transid: TransactionId): Future[Container]
+  def delete(id: ContainerId)(implicit transid: TransactionId): Future[ContainerDeleteResponse]
   /**
   /**
  * Gets the IP address of a given container.

@@ -21,11 +21,14 @@ package org.apache.openwhisk.core.invoker
 import akka.Done
 import akka.actor.{ActorSystem, CoordinatedShutdown, Terminated}
 import akka.stream._
+import org.apache.openwhisk.core.containerpool.logging.ContainerdToActivationFileLogStore
+import org.apache.openwhisk.core.entitlement.Privilege
+import spray.json.{JsNumber, JsObject}
 //import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import com.typesafe.config.ConfigValueFactory
 import kamon.Kamon
-import org.apache.openwhisk.core.containerpool.logging.{ContainerdToActivationLogStore, LogCollectingException}
-import org.apache.openwhisk.core.entity.ExecManifest.{ImageName, RuntimeManifest}
+import org.apache.openwhisk.core.containerpool.logging.{LogCollectingException}
+import org.apache.openwhisk.core.entity.ExecManifest.{RuntimeManifest}
 import org.apache.openwhisk.core.entity._
 import pureconfig.loadConfigOrThrow
 
@@ -56,6 +59,7 @@ import scala.util.{Failure, Success, Try}
 //import org.apache.openwhisk.http.Messages
 import org.apache.openwhisk.core.entity.ActivationLogs
 import org.apache.openwhisk.core.containerpool.containerd.ContainerdContainerFactoryProvider
+import java.time.Instant
 
 case class CmdLineArgs(uniqueName: Option[String] = None, id: Option[Int] = None, displayedName: Option[String] = None)
 
@@ -212,28 +216,67 @@ object Invoker {
 
     cf.init()
 
+    val image = ExecManifest.ImageName.fromString("docker.io/library/spammer:latest").getOrElse(ExecManifest.ImageName("blub"))
+
     val cContainerFuture =
-      cf.createContainer(TransactionId.testing, "s", ExecManifest.ImageName("myimage"), false, 128.MB, 1)
+      cf.createContainer(TransactionId.testing, "myTestContainerName", image, true , 128.MB, 1)
 
     val cContainer = Await.result(cContainerFuture, 5.seconds)
-
+  
     logger.info(this, s"$cContainer")
-    val actionExec = CodeExecAsString(RuntimeManifest("actionKind", ImageName("testImage")), "testCode", None)
-    val testAction = ExecutableWhiskAction(EntityPath("dummynamespace"), EntityName("dummyaction"), actionExec, limits = ActionLimits())
 
-    val logs: Future[ActivationLogs] = new ContainerdToActivationLogStore(actorSystem).collectLogs(TransactionId.testing, null, null, cContainer, testAction)
+    logger.info(this, "Suspending container.")
+    cContainer.suspend()(TransactionId.testing).andThen {
+      case Success(al) => {
+      logger.info(this, s"Suspended Container successfully")
+      }
+    }
+    logger.info(this, "Resuming container.")
+    cContainer.resume()(TransactionId.testing).andThen {
+      case Success(al) => {
+      logger.info(this, s"Resumed Container successfully")
+      }
+    }
+
+
+    val actionExec = CodeExecAsString(RuntimeManifest("actionKind", image), "testCode", None)
+    val testAction = ExecutableWhiskAction(EntityPath("dummynamespace"), EntityName("dummyaction"), actionExec, limits = ActionLimits())
+    val testUser = Identity(Subject("marc-test-subject"), Namespace(EntityName("dummy-namespace"), UUID.apply("asdasdasdasd")), BasicAuthenticationAuthKey(), Privilege.ALL)
+    val testActivation = WhiskActivation(
+      namespace = EntityPath("ns"),
+      name = EntityName("a"),
+      Subject(),
+      activationId = ActivationId.generate(),
+      start = Instant.now(),
+      end = Instant.now(),
+      response = ActivationResponse.success(Some(JsObject("res" -> JsNumber(1)))),
+      duration = Some(123))
+
+    val logs: Future[ActivationLogs] = new ContainerdToActivationFileLogStore(actorSystem).collectLogs(TransactionId.testing, testUser,testActivation, cContainer, testAction)
 
     logs.andThen {
-      case Success(al) => logger.info(this, s"ActivationLogs: $al")
-      case Failure(LogCollectingException(l)) =>
+
+      case Success(al) => {
+        logger.info(this, s"ActivationLogs: $al")
+        logger.info(this, "Deleting container.")
+        Await.result(cContainer.destroy()(TransactionId.testing), 5.seconds)
+      }
+      case Failure(LogCollectingException(l)) => {
         logger.error(this, s"LogCollectionException: $l")
-      case Failure(t) => logger.error(this, s"Log collection failed: $t")
+          logger.info(this, "Deleting container.")
+          Await.result(cContainer.destroy()(TransactionId.testing), 5.seconds)
+        }
+      case Failure(t) => {
+        logger.error(this, s"Log collection failed: $t")
+
+        logger.info(this, "Deleting container.")
+        Await.result(cContainer.destroy()(TransactionId.testing), 5.seconds)
+      }
     }
-    Await.result(logs, 5.seconds)
 
-    logger.info(this, "Deleting container.")
+    //Await.result(logs, 5.seconds)
 
-    Await.result(cContainer.destroy()(TransactionId.testing), 5.seconds)
+    Thread.sleep(5000)
 
     // CONTAINERD: shutdown required
     logger.info(this, "Shutting down Kamon.")
@@ -246,6 +289,7 @@ object Invoker {
     Await.result(kamonStop, 5.seconds)
 
     logger.info(this, "Shutting down actor system.")
+
 
     val termination = actorSystem.terminate()
     logger.info(this, "After actorSystem.terminate().")

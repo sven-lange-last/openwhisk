@@ -67,14 +67,15 @@ object ContainerdContainer {
     val imageToUse = image.fold(_.publicImageName, identity)
 
     //TODO consider pull handling for blackbox image support
+    //currently we pull on create
 
     containerdClient.createAndRun(imageToUse, name.getOrElse("s")).map { c =>
-      new ContainerdContainer(ContainerId(c.name), ContainerAddress("localhost"))
+      new ContainerdContainer(ContainerId(c.id), c.name, c.image, c.capturedOutput, ContainerAddress(c.ip.orNull))
     }
   }
 }
 
-class ContainerdContainer(protected val id: ContainerId, protected val addr: ContainerAddress)(
+class ContainerdContainer(protected val id: ContainerId, protected val name: String, protected val image: String ,protected val logfile: String, protected val addr: ContainerAddress)(
   implicit containerdClient: ContainerdClient,
   override protected val as: ActorSystem,
   protected val ec: ExecutionContext,
@@ -82,11 +83,16 @@ class ContainerdContainer(protected val id: ContainerId, protected val addr: Con
     extends Container {
 
   /** Stops the container from consuming CPU cycles. NOT thread-safe - caller must synchronize. */
-  override def suspend()(implicit transid: TransactionId): Future[Unit] =
+  override def suspend()(implicit transid: TransactionId): Future[Unit] = {
     super.suspend()
+    containerdClient.suspend(id)
+  }
 
   /** Dual of halt. NOT thread-safe - caller must synchronize.*/
-  override def resume()(implicit transid: TransactionId): Future[Unit] = super.resume()
+  override def resume()(implicit transid: TransactionId): Future[Unit] = {
+    super.resume()
+    containerdClient.resume(id)
+  }
 
   /** Completely destroys this instance of the container. */
   override def destroy()(implicit transid: TransactionId): Future[Unit] = {
@@ -96,9 +102,8 @@ class ContainerdContainer(protected val id: ContainerId, protected val addr: Con
 
   /** Obtains logs up to a given threshold from the container. Optionally waits for a sentinel to appear. */
   override def logs(limit: ByteSize, waitForSentinel: Boolean)(implicit transid: TransactionId): Source[ByteString, Any] = {
-    //TODO get path to logfile from ContainerdContainer
     containerdClient
-      .rawContainerLogs((new File("/tmp/s.log")).toPath, 0L, if (waitForSentinel) Some(filePollInterval) else None)
+      .rawContainerLogs(new File(logfile).toPath, 0L, if (waitForSentinel) Some(filePollInterval) else None)
       // This stage only throws 'FramingException' so we cannot decide whether we got truncated due to a size
       // constraint (like StreamLimitReachedException below) or due to the file being truncated itself.
       .via(Framing.delimiter(delimiter, limit.toBytes.toInt))
