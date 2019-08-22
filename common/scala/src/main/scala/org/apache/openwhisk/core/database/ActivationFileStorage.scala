@@ -47,7 +47,9 @@ class ActivationFileStorage(logFilePrefix: String,
   private val perms = EnumSet.of(OWNER_READ, OWNER_WRITE, GROUP_READ, GROUP_WRITE, OTHERS_READ, OTHERS_WRITE)
   private val writeToFile: Sink[ByteString, _] = MergeHub
     .source[ByteString]
+    .log("before batch")
     .batchWeighted(bufferSize.toBytes, _.length, identity)(_ ++ _)
+    .log("after batch")
     .to(RestartSink.withBackoff(minBackoff = 1.seconds, maxBackoff = 60.seconds, randomFactor = 0.2) { () =>
       LogRotatorSink(() => {
         val maxSize = bufferSize.toBytes
@@ -117,6 +119,15 @@ class ActivationFileStorage(logFilePrefix: String,
     // Write each log line to file and then write the activation metadata
     Source
       .fromIterator(() => transcribedLogs.toIterator)
-      .runWith(Flow[ByteString].concat(Source.single(transcribedActivation)).to(writeToFile))
+      .runWith {
+        Flow[ByteString]
+          .concat(Source.single(transcribedActivation))
+          .log("before sink")()
+          .map { element =>
+            logging.info(this, s"before sink: '$element'")
+            element
+          }
+          .to(writeToFile)
+      }
   }
 }

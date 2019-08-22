@@ -276,6 +276,11 @@
       "CONFIG_whisk_invoker_https_keystorePassword": "{{ invoker.ssl.keystore.password }}"
       "CONFIG_whisk_invoker_https_keystoreFlavor": "{{ invoker.ssl.storeFlavor }}"
       "CONFIG_whisk_invoker_https_clientAuth": "{{ invoker.ssl.clientAuth }}"
+      "CONFIG_whisk_spi_ActivationStoreProvider": "org.apache.openwhisk.core.database.ArtifactWithFileStorageActivationStoreProvider"
+      "CONFIG_whisk_activationStore_withFileStorage_writeResultToFile": "true"
+      "CONFIG_whisk_activationStore_withFileStorage_logPath": "/logs"
+      "CONFIG_whisk_activationStore_withFileStorage_logFilePrefix": "userlogs"
+      "CONFIG_whisk_activationStore_withFileStorage_userIdField": "ALCH_TENANT_ID"
 
 - name: extend invoker dns env
   set_fact:
