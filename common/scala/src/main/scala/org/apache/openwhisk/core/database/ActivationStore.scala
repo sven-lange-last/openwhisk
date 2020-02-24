@@ -45,11 +45,7 @@ trait ActivationStore {
   def storeAfterCheck(activation: WhiskActivation, context: UserContext)(
     implicit transid: TransactionId,
     notifier: Option[CacheChangeNotification]): Future[DocInfo] = {
-    if (context.user.limits.storeActivations.getOrElse(true)) {
-      store(activation, context)
-    } else {
-      Future.successful(DocInfo(activation.docid))
-    }
+    store(activation, context)
   }
 
   /**

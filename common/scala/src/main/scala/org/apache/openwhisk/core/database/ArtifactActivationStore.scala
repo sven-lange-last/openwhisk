@@ -40,6 +40,11 @@ class ArtifactActivationStore(actorSystem: ActorSystem, actorMaterializer: Actor
     implicit transid: TransactionId,
     notifier: Option[CacheChangeNotification]): Future[DocInfo] = {
 
+    if (!(context.user.limits.storeActivations.getOrElse(true))) {
+      // only store activation if limit is not set to false
+      return Future.successful(DocInfo(activation.docid))
+    }
+
     logging.debug(this, s"recording activation '${activation.activationId}'")
 
     val res = WhiskActivation.put(artifactStore, activation)
