@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-node('openwhisk1||openwhisk2||openwhisk3') {
+node('cf_slave') {
   sh "env"
   sh "docker version"
   sh "docker info"
@@ -24,19 +24,16 @@ node('openwhisk1||openwhisk2||openwhisk3') {
   checkout scm
 
   stage("Build and Deploy to DockerHub") {
-    def JAVA_JDK_8=tool name: 'JDK 1.8 (latest)', type: 'hudson.model.JDK'
-    withEnv(["Path+JDK=$JAVA_JDK_8/bin","JAVA_HOME=$JAVA_JDK_8"]) {
       withCredentials([usernamePassword(credentialsId: 'openwhisk_dockerhub', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USER')]) {
           sh 'docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}'
       }
-      def PUSH_CMD = "./gradlew :core:controller:distDocker :core:invoker:distDocker :core:standalone:distDocker :core:monitoring:user-events:distDocker :tools:ow-utils:distDocker :core:cosmos:cache-invalidator:distDocker -PdockerRegistry=docker.io -PdockerImagePrefix=openwhisk"
+      def PUSH_CMD = "./gradlew :core:controller:distDocker :core:invoker:distDocker :core:standalone:distDocker :core:monitoring:user-events:distDocker :tools:ow-utils:distDocker :core:cosmos:cache-invalidator:distDocker -PdockerRegistry=docker.io -PdockerImagePrefix=ibmfunctions"
       def gitCommit = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
       def shortCommit = gitCommit.take(7)
       sh "./gradlew clean"
       sh "${PUSH_CMD} -PdockerImageTag=nightly"
       sh "${PUSH_CMD} -PdockerImageTag=${shortCommit}"
     }
-  }
 
   stage("Clean") {
     sh "docker images"
@@ -45,9 +42,6 @@ node('openwhisk1||openwhisk2||openwhisk3') {
   }
 
   stage("Notify") {
-    withCredentials([string(credentialsId: 'openwhisk_slack_token', variable: 'OPENWHISK_SLACK_TOKEN')]) {
-      sh "curl -X POST --data-urlencode 'payload={\"channel\": \"#dev\", \"username\": \"whiskbot\", \"text\": \"OpenWhisk Docker Images build and posted to https://hub.docker.com/u/openwhisk by Jenkins job ${BUILD_URL}\", \"icon_emoji\": \":openwhisk:\"}' https://hooks.slack.com/services/${OPENWHISK_SLACK_TOKEN}"
-    }
-
+    sh "echo Done."
   }
 }
