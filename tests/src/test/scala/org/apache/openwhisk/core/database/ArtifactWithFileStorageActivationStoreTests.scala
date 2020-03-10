@@ -68,7 +68,7 @@ class ArtifactWithFileStorageActivationStoreTests()
     super.afterAll()
   }
 
-  private def await[T](awaitable: Future[T], timeout: FiniteDuration = 10.seconds) = Await.result(awaitable, timeout)
+  private def await[T](awaitable: Future[T], timeout: FiniteDuration = 30.seconds) = Await.result(awaitable, timeout)
 
   def responsePermutations = {
     val message = JsObject("result key" -> JsString("result value"))
