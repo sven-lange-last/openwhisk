@@ -94,6 +94,11 @@ trait DatabaseScriptTestUtils extends ScalaFutures with Matchers with WaitFor wi
       val delete = db.deleteDb().futureValue
       if (!ignoreFailure) delete shouldBe 'right
     }
+    // make sure database is deleted
+    retry {
+      val exist = db.doesDbExist().futureValue
+      exist shouldBe false
+    }
     db
   }
 
