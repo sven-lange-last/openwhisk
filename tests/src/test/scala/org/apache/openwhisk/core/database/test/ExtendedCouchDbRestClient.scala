@@ -59,6 +59,16 @@ class ExtendedCouchDbRestClient(protocol: String,
   def deleteDb(): Future[Either[StatusCode, JsObject]] =
     requestJson[JsObject](mkRequest(HttpMethods.DELETE, uri(db), headers = baseHeaders))
 
+  // http://docs.couchdb.org/en/1.6.1/api/database/common.html#head--db
+  def doesDbExist(): Future[Boolean] = {
+    requestJson[JsObject](mkRequest(HttpMethods.HEAD, uri(db), headers = baseHeaders))
+      .map {
+        case Right(_)                   => true
+        case Left(StatusCodes.NotFound) => false
+        case Left(s)                    => throw new IllegalStateException("Unknown status code while checking db:" + s)
+      }
+  }
+
   // http://docs.couchdb.org/en/1.6.1/api/database/bulk-api.html#get--db-_all_docs
   def getAllDocs(skip: Option[Int] = None,
                  limit: Option[Int] = None,
